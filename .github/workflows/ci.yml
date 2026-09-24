@@ -67,7 +67,8 @@ jobs:
       - name: End-to-end pipeline smoke test
         working-directory: backend
         run: |
-          PYTHONPATH=. pytest scripts/smoke_test.py
+          PYTHONPATH: .
+         run: pytest scripts/smoke_test.py
 
   frontend:
     runs-on: ubuntu-latest
