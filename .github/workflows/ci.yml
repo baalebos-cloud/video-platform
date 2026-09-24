@@ -51,7 +51,7 @@ jobs:
 
       - name: Byte-compile (fast syntax check)
         working-directory: backend
-        run: python -m py_compile $(find app -name "*.py")
+        run: python -m compileall -q app
 
       - name: Run Alembic migrations
         working-directory: backend
@@ -66,9 +66,9 @@ jobs:
 
       - name: End-to-end pipeline smoke test
         working-directory: backend
-        run: |
+        env:
           PYTHONPATH: .
-         run: pytest scripts/smoke_test.py
+        run: python -m pytest scripts/smoke_test.py -v
 
   frontend:
     runs-on: ubuntu-latest
