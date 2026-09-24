@@ -68,7 +68,9 @@ jobs:
         working-directory: backend
         env:
           PYTHONPATH: .
-        run: python -m pytest scripts/smoke_test.py -v
+        run: |
+          pip install moto[s3]
+          python scripts/smoke_test.py
 
   frontend:
     runs-on: ubuntu-latest
