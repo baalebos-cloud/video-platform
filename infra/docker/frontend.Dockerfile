@@ -9,6 +9,10 @@ FROM node:20-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ .
+# Guarantee /app/public exists even if it's ever empty again — Git does
+# not track empty directories, so an empty public/ silently disappears
+# from the build context and breaks the COPY below in the runner stage.
+RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
