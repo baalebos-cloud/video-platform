@@ -74,8 +74,7 @@ class Settings(BaseSettings):
     max_video_duration_seconds: int = 180
 
     # --- CORS ---
-    cors_allowed_origins: list[str] = ["http://localhost:3000"]
-
+    cors_allowed_origins: list[str] = ["https://vercel.app"]
 
 @lru_cache
 def get_settings() -> Settings:
