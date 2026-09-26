@@ -5,7 +5,14 @@
  */
 import { getAccessToken } from "@/lib/auth/token";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+// Trailing slash(es) stripped defensively: NEXT_PUBLIC_API_URL is a
+// hand-typed env var on Vercel, and a value like
+// "https://api.example.com/" (instead of the intended
+// "https://api.example.com/api/v1") produces a double-slash path like
+// "//auth/signup" once concatenated with a path — which 400s/404s at
+// the backend. Stripping here means a stray trailing slash can no
+// longer break every request.
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1").replace(/\/+$/, "");
 
 export class ApiError extends Error {
   status: number;
