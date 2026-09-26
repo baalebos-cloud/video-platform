@@ -74,7 +74,22 @@ class Settings(BaseSettings):
     max_video_duration_seconds: int = 180
 
     # --- CORS ---
-    cors_allowed_origins: list[str] = ["https://vercel.app"]
+    # Kept as a raw string (not list[str]) because pydantic-settings
+    # attempts strict json.loads() on any list-typed env var *before* any
+    # field_validator runs — which rejects a plain comma-separated value.
+    # A comma-separated string is far less error-prone to paste into
+    # Render's/Vercel's single-line env var UI than a quoted JSON array,
+    # so `cors_allowed_origins` (below) parses this instead.
+    cors_allowed_origins_raw: str = "http://localhost:3000"
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        raw = self.cors_allowed_origins_raw.strip()
+        if raw.startswith("["):
+            import json
+
+            return json.loads(raw)
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 @lru_cache
 def get_settings() -> Settings:
