@@ -17,12 +17,18 @@ Why this exists:
   (`prepared statement "..." does not exist`). Disabling that cache is
   the standard fix and is harmless on a direct (non-pooled) connection
   too, so it's applied unconditionally here.
+- Neon *requires* SSL on every connection, full stop — so rather than
+  relying on `?sslmode=require` surviving every copy/paste into an env
+  var (it's already been accidentally dropped once), SSL is force-enabled
+  whenever the hostname looks like a Neon endpoint (`*.neon.tech`),
+  regardless of what query params are or aren't present in the URL.
 """
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Query params understood by libpq/psycopg but not by asyncpg's connect().
 _UNSUPPORTED_BY_ASYNCPG = {"sslmode", "channel_binding"}
 _SSL_REQUIRED_VALUES = {"require", "verify-ca", "verify-full"}
+_ALWAYS_SSL_HOST_SUFFIXES = (".neon.tech",)
 
 
 def normalize_asyncpg_url(raw_url: str) -> tuple[str, dict]:
@@ -38,7 +44,7 @@ def normalize_asyncpg_url(raw_url: str) -> tuple[str, dict]:
 
     wants_ssl = any(
         key == "sslmode" and value in _SSL_REQUIRED_VALUES for key, value in query_pairs
-    )
+    ) or (parts.hostname or "").endswith(_ALWAYS_SSL_HOST_SUFFIXES)
 
     clean_pairs = [(k, v) for k, v in query_pairs if k not in _UNSUPPORTED_BY_ASYNCPG]
     clean_query = urlencode(clean_pairs)
