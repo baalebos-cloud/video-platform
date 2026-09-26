@@ -91,6 +91,7 @@ class Settings(BaseSettings):
             return json.loads(raw)
         return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
