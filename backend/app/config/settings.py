@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     # --- AI providers (all optional — mock adapters are used when absent) ---
     llm_provider: str = "mock"
     llm_api_key: str | None = Field(default=None, repr=False)
-
+    # Only used by the "baalebos_ai" LLM provider (a personal multi-provider
+    # gateway) — the full webhook URL to POST {"prompt": "..."} to.
+    llm_gateway_url: str | None = None
+    
     voice_provider: str = "mock"
     google_cloud_project: str | None = None
     google_application_credentials: str | None = None
