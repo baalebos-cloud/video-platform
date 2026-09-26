@@ -8,10 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config.settings import get_settings
+from app.db.url import normalize_asyncpg_url
 
 settings = get_settings()
+_clean_url, _connect_args = normalize_asyncpg_url(settings.database_url)
 
-engine = create_async_engine(settings.database_url, echo=settings.debug, pool_pre_ping=True)
+engine = create_async_engine(
+    _clean_url, echo=settings.debug, pool_pre_ping=True, connect_args=_connect_args
+)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
