@@ -12,6 +12,7 @@ from typing import Literal
 
 from app.ai.providers.base import ImageProvider, LLMProvider, VideoProvider, VoiceProvider
 from app.ai.providers.image.mock import MockImageProvider
+from app.ai.providers.llm.baalebos_gateway import BaalebosGatewayLLMProvider
 from app.ai.providers.llm.mock import MockLLMProvider
 from app.ai.providers.tts.mock import MockVoiceProvider
 from app.ai.providers.video.mock import MockVideoProvider
@@ -22,8 +23,8 @@ TaskType = Literal["llm", "voice", "image", "video"]
 
 @lru_cache
 def _llm_registry() -> dict[str, LLMProvider]:
-    return {"mock": MockLLMProvider()}
-    # Register real adapters here, e.g.:
+    return {"mock": MockLLMProvider(), "baalebos_ai": BaalebosGatewayLLMProvider()}
+    # Register further real adapters here, e.g.:
     # "openai": OpenAILLMProvider(api_key=settings.llm_api_key)
 
 
