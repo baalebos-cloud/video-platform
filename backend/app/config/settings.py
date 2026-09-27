@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     max_concurrent_jobs_per_user: int = 3
     max_video_duration_seconds: int = 180
 
+    # --- Worker topology ---
+    # When true, the API process itself runs the arq worker loop as a
+    # background asyncio task instead of relying on a separate worker
+    # process/service. This exists specifically for free-tier hosting
+    # (e.g. Render's free plan only offers a "Web Service" type; its
+    # "Background Worker" type is paid-only) — one process does both
+    # jobs, at the cost of the API and worker no longer scaling or
+    # restarting independently. Prefer a real separate worker
+    # (docker-compose's `worker` service, or a paid Background Worker)
+    # once budget allows; this is an MVP-stage cost tradeoff, not the
+    # long-term recommended topology.
+    run_worker_in_process: bool = False
+
     # --- CORS ---
     # Kept as a raw string (not list[str]) because pydantic-settings
     # attempts strict json.loads() on any list-typed env var *before* any
