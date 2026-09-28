@@ -3,6 +3,10 @@ Object storage service — thin wrapper around an S3-compatible client
 (works with AWS S3, MinIO, Cloudflare R2, etc.) Media binaries are never
 stored in PostgreSQL rows; only their storage_key + metadata are (see
 docs/architecture.md, "Database Blueprint").
+
+These functions are synchronous (boto3 is). Async callers must run them
+via `asyncio.to_thread(...)` so a slow upload can't freeze the event loop
+— which matters a lot when the worker runs inside the API process.
 """
 import hashlib
 import uuid
@@ -20,7 +24,15 @@ def _client():
     client_kwargs = dict(
         aws_access_key_id=settings.storage_access_key,
         aws_secret_access_key=settings.storage_secret_key,
-        config=Config(signature_version="s3v4"),
+        region_name=settings.storage_region,
+        config=Config(
+            signature_version="s3v4",
+            # Fail fast with a clear error instead of hanging for minutes
+            # (boto3's defaults are 60s timeouts x 5 retries).
+            connect_timeout=10,
+            read_timeout=30,
+            retries={"max_attempts": 2, "mode": "standard"},
+        ),
     )
     if settings.storage_endpoint:
         client_kwargs["endpoint_url"] = settings.storage_endpoint
