@@ -2,6 +2,7 @@
 Composes all scene assets into the final MP4: per-scene clips, captions,
 concatenation, and thumbnail extraction (blueprint section 19.2).
 """
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -12,6 +13,13 @@ from app.services.caption_service import generate_captions, to_srt
 
 
 async def run(video: Video, scenes: list[Scene], scene_assets: dict[str, dict]) -> dict:
+    # Everything below is blocking (boto3 + FFmpeg subprocesses), so run it
+    # in a worker thread to keep the event loop — and, when the worker is
+    # embedded in the API process, the API itself — responsive.
+    return await asyncio.to_thread(_render_sync, video, scenes, scene_assets)
+
+
+def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict]) -> dict:
     """
     scene_assets: {scene_id: {"image_key": str, "audio_key": str, "duration": float}}
     Returns dict with storage keys for the final video and thumbnail, plus total duration.
