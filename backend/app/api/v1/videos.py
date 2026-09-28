@@ -59,6 +59,7 @@ class VideoStatusResponse(BaseModel):
     status: str
     progress: int
     current_stage: str | None
+    error_message: str | None = None
     estimated_remaining_seconds: int | None = None
 
     class Config:
