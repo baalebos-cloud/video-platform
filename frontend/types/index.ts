@@ -30,6 +30,7 @@ export interface VideoStatusResponse {
   status: VideoStatus;
   progress: number;
   current_stage: string | null;
+  error_message?: string | null;
   estimated_remaining_seconds?: number | null;
 }
 
