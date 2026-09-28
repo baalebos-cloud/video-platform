@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # the bundled MinIO service).
     storage_endpoint: str = ""
     storage_bucket: str = "aivideo-assets"
+    storage_region: str = "auto"
     storage_access_key: str = "minioadmin"
     storage_secret_key: str = Field(default="minioadmin", repr=False)
     storage_public_base_url: str | None = None
