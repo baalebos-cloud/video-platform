@@ -65,7 +65,14 @@ export default function VideoProgressPage() {
               </p>
             )}
             {video.status === "failed" && (
-              <p className="text-sm text-red-700">Generation failed. Check the job&apos;s error details or try again.</p>
+                 <div className="flex flex-col gap-2">
+              <p className="text-sm text-red-700">Generation failed.</p>
+            {video.error_message && (
+              <p className="break-words rounded bg-red-50 p-2 font-mono text-xs text-red-800">
+            {video.error_message}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
