@@ -119,6 +119,7 @@ async def get_video_status(
         status=video.status.value,
         progress=video.progress,
         current_stage=video.current_stage,
+        error_message=video.error_message,
     )
 
 
