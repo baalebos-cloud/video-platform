@@ -59,6 +59,7 @@ class VideoStatusResponse(BaseModel):
     status: str
     progress: int
     current_stage: str | None
+    error_message: str | None
     estimated_remaining_seconds: int | None = None
 
     class Config:
@@ -118,6 +119,7 @@ async def get_video_status(
         status=video.status.value,
         progress=video.progress,
         current_stage=video.current_stage,
+        error_message=video.error_message,
     )
 
 
