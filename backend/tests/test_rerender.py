@@ -109,3 +109,28 @@ async def test_rerender_rejects_missing_saved_narration():
             await videos.rerender_video(video_id, user=user, db=db)
     assert exc.value.status_code == 409
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prompt_update_detects_render_started_while_waiting_for_row_lock():
+    from app.api.v1 import storyboards
+    video_id = uuid.uuid4()
+    video = SimpleNamespace(id=video_id, status=VideoStatus.READY)
+    db = AsyncMock()
+
+    async def change_status_on_lock(instance, *, with_for_update):
+        assert with_for_update is True
+        instance.status = VideoStatus.RENDERING
+
+    db.refresh.side_effect = change_status_on_lock
+    with patch.object(storyboards, "require_video_owner", new_callable=AsyncMock) as owner:
+        owner.return_value = video
+        with pytest.raises(HTTPException) as exc:
+            await storyboards.update_scene_prompt(
+                video_id, uuid.uuid4(),
+                storyboards.ScenePromptUpdate(visual_prompt="A new scene image"),
+                user=SimpleNamespace(id=uuid.uuid4()), db=db,
+            )
+    assert exc.value.status_code == 409
+    db.get.assert_not_awaited()
+    db.commit.assert_not_awaited()

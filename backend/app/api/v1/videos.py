@@ -215,7 +215,7 @@ async def rerender_video(
 
     # Serialize against another request and storyboard mutations. Unlike a
     # read-then-write check, this prevents two simultaneous render jobs.
-    result = await db.execute(select(Video).where(Video.id == video_id).with_for_update())
+    result = await db.execute(select(Video).where(Video.id == video_id).with_for_update().execution_options(populate_existing=True))
     video = result.scalar_one()
     if video.status != VideoStatus.READY or video.output_asset_id is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Video is not ready for re-rendering")

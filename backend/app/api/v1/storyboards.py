@@ -61,7 +61,7 @@ async def update_scene_prompt(
     db: AsyncSession = Depends(get_db),
 ):
     video = await require_video_owner(db, video_id, user.id)
-    await db.execute(select(Video.id).where(Video.id == video.id).with_for_update())
+    await db.refresh(video, with_for_update=True)
     ensure_editable(video)
     scene = await get_owned_scene(db, video.id, scene_id)
     prompt = payload.visual_prompt.strip()
@@ -99,7 +99,7 @@ async def regenerate_scene(
 
     # Recheck after the external provider call: another request may have
     # queued re-rendering while an image was being generated.
-    await db.execute(select(Video.id).where(Video.id == video.id).with_for_update())
+    await db.refresh(video, with_for_update=True)
     ensure_editable(video)
     scene = await get_owned_scene(db, video.id, scene_id)
     asset = Asset(owner_id=user.id, type=AssetType.IMAGE, storage_key=storage_key, mime_type=f"image/{result.format}")
