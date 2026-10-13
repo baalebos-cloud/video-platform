@@ -4,6 +4,7 @@ or video provider (blueprint section 10).
 """
 from app.ai.providers.base import ImageGenerationResult
 from app.ai.providers.registry import select_provider
+from app.services import provider_guard
 
 
 async def generate_scene_image(*, prompt: str, aspect_ratio: str = "9:16") -> ImageGenerationResult:
@@ -13,4 +14,6 @@ async def generate_scene_image(*, prompt: str, aspect_ratio: str = "9:16") -> Im
         f"[NEGATIVE CONSTRAINTS] No unwanted text, no malformed hands, no duplicate objects, "
         f"no inconsistent character changes, no distracting artifacts."
     )
+    if provider.name != "mock":
+        await provider_guard.claim_media_call("image")
     return await provider.generate(full_prompt, aspect_ratio=aspect_ratio)

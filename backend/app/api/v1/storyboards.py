@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.security.permissions import require_video_owner
 from app.security.rate_limit import RateLimiter
 from app.config.settings import get_settings
+from app.services import credit_service
 
 router = APIRouter(prefix="/videos", tags=["storyboards"])
 
@@ -89,7 +90,23 @@ async def regenerate_scene(
 
     ensure_editable(video)
     scene = await get_owned_scene(db, video.id, scene_id)
-    result = await visual_service.generate_scene_image(prompt=scene.visual_prompt, aspect_ratio=video.aspect_ratio)
+    settings = get_settings()
+    charged_id = str(uuid.uuid4()) if settings.image_provider != "mock" and settings.credit_enforcement_enabled else None
+    if charged_id:
+        await credit_service.debit(
+            db, user.id, settings.scene_regeneration_credits,
+            reference_type="scene_regeneration", reference_id=charged_id,
+            metadata={"video_id": str(video.id), "scene_id": str(scene.id)},
+        )
+        await db.commit()
+    try:
+        result = await visual_service.generate_scene_image(prompt=scene.visual_prompt, aspect_ratio=video.aspect_ratio)
+    except Exception:
+        await db.rollback()
+        if charged_id:
+            await credit_service.refund(db, user.id, reference_type="scene_regeneration", reference_id=charged_id)
+            await db.commit()
+        raise
     storage_key, _c, _s = await asyncio.to_thread(
         storage_service.put_object,
         result.image_bytes,
@@ -101,7 +118,12 @@ async def regenerate_scene(
     # Recheck after the external provider call: another request may have
     # queued re-rendering while an image was being generated.
     await db.refresh(video, with_for_update=True)
-    ensure_editable(video)
+    if video.status != VideoStatus.READY:
+        if charged_id:
+            await db.rollback()
+            await credit_service.refund(db, user.id, reference_type="scene_regeneration", reference_id=charged_id)
+            await db.commit()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Video started rendering during scene regeneration")
     scene = await get_owned_scene(db, video.id, scene_id)
     asset = Asset(
         owner_id=user.id, type=AssetType.IMAGE, storage_key=storage_key,

@@ -79,7 +79,14 @@ class Settings(BaseSettings):
     billing_secret_key: str | None = Field(default=None, repr=False)
 
     # --- Cost / quota defaults ---
-    default_plan_monthly_credits: int = 100
+    default_plan_monthly_credits: int = 100  # reserved for future recurring plans (no automatic grant)
+    credit_enforcement_enabled: bool = False
+    signup_starter_credits: int = Field(default=0, ge=0, le=10000)
+    credits_per_30_seconds: int = Field(default=10, ge=1, le=1000)
+    scene_regeneration_credits: int = Field(default=2, ge=1, le=100)
+    voice_preview_credits: int = Field(default=1, ge=1, le=100)
+    # Global, daily circuit breaker across all live media calls. Not a USD budget.
+    max_daily_live_media_calls: int = Field(default=100, ge=1, le=100000)
     max_concurrent_jobs_per_user: int = 3
     max_video_duration_seconds: int = 180
 
@@ -112,6 +119,8 @@ class Settings(BaseSettings):
         ):
             raise ValueError("OPENAI_API_KEY is required when VOICE_PROVIDER or IMAGE_PROVIDER is openai")
         if self.app_env == "production":
+            if (self.voice_provider == "openai" or self.image_provider == "openai") and not self.credit_enforcement_enabled:
+                raise ValueError("CREDIT_ENFORCEMENT_ENABLED must be true for live media in production")
             if len(self.jwt_secret) < 32 or self.jwt_secret.lower().startswith(("replace", "dev-", "test-")):
                 raise ValueError("Production JWT_SECRET must be a strong, non-placeholder value (at least 32 characters)")
             if self.debug:

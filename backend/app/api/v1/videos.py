@@ -89,9 +89,6 @@ async def generate_video(
     db: AsyncSession = Depends(get_db),
 ) -> GenerateVideoResponse:
     await require_project_owner(db, payload.project_id, user.id)
-    await quota_service.enforce_max_duration(payload.duration_seconds)
-    await quota_service.enforce_concurrent_job_limit(db, user.id)
-
     input_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
     # A client-supplied retry key is namespaced to the user. Without a key,
     # repeated intentional generations of the same prompt remain possible.
@@ -120,6 +117,8 @@ async def generate_video(
     if previous is not None:
         return previous
 
+    await quota_service.enforce_max_duration(payload.duration_seconds)
+    await quota_service.enforce_concurrent_job_limit(db, user.id)
     try:
         video, job = await video_service.start_generation(
             db,

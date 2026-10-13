@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.generation_job import GenerationJob, JobStatus, JobType
 from app.db.models.video import Video, VideoStatus
+from app.db.models.project import Project
+from app.services import credit_service
+from app.config.settings import get_settings
 from app.workers.queue import enqueue
 
 
@@ -54,6 +57,19 @@ async def start_generation(
     )
     db.add(job)
     await db.flush()
+    settings = get_settings()
+    if settings.credit_enforcement_enabled:
+        project = await db.get(Project, project_id)
+        if project is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+        await credit_service.debit(
+            db, project.user_id, credit_service.generation_price(duration_seconds),
+            reference_type="video_generation", reference_id=str(job.id),
+            metadata={
+                "video_id": str(video.id), "duration_seconds": duration_seconds,
+                "voice_provider": settings.voice_provider, "image_provider": settings.image_provider,
+            },
+        )
     await db.commit()
 
     try:
@@ -68,6 +84,7 @@ async def start_generation(
         job.status = JobStatus.FAILED
         job.error_code = "queue_unavailable"
         job.error_message = video.error_message
+        await credit_service.refund(db, project.user_id, reference_type="video_generation", reference_id=str(job.id)) if settings.credit_enforcement_enabled else None
         await db.commit()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Generation queue unavailable")
     return video, job
