@@ -3,13 +3,14 @@ Composes all scene assets into the final MP4: per-scene clips, captions,
 concatenation, and thumbnail extraction (blueprint section 19.2).
 """
 import asyncio
+import shutil
 import tempfile
 from pathlib import Path
 
 from app.db.models.scene import Scene
 from app.db.models.video import Video
 from app.services import render_service, storage_service
-from app.services.caption_service import generate_captions, to_srt
+from app.services.caption_service import CaptionCue, generate_captions, to_srt
 
 
 async def run(video: Video, scenes: list[Scene], scene_assets: dict[str, dict]) -> dict:
@@ -27,7 +28,7 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         clip_paths: list[Path] = []
-        all_narration: list[str] = []
+        caption_cues: list[CaptionCue] = []
         total_duration = 0.0
 
         for scene in sorted(scenes, key=lambda s: s.sequence):
@@ -44,18 +45,30 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
 
             render_service.render_scene_clip(image_path, audio_path, duration, clip_path, aspect_ratio=video.aspect_ratio)
             clip_paths.append(clip_path)
-            all_narration.append(scene.narration)
+            # The caption edit is scoped to its own scene; timings remain an
+            # approximation of narration duration until ASR alignment ships.
+            caption_text = scene.caption_text if scene.caption_text is not None else scene.narration
+            for cue in generate_captions(caption_text, duration):
+                caption_cues.append(CaptionCue(
+                    start_seconds=round(total_duration + cue.start_seconds, 2),
+                    end_seconds=round(total_duration + cue.end_seconds, 2),
+                    text=cue.text,
+                ))
             total_duration += duration
 
         concatenated_path = tmp_path / "concatenated.mp4"
         render_service.concatenate_clips(clip_paths, concatenated_path)
 
-        cues = generate_captions(" ".join(all_narration), total_duration)
-        srt_path = tmp_path / "captions.srt"
-        srt_path.write_text(to_srt(cues))
-
         final_path = tmp_path / "final.mp4"
-        render_service.burn_in_captions(concatenated_path, srt_path, final_path)
+        if caption_cues:
+            srt_path = tmp_path / "captions.srt"
+            srt_path.write_text(to_srt(caption_cues), encoding="utf-8")
+            render_service.burn_in_captions(
+                concatenated_path, srt_path, final_path,
+                style=video.caption_style or "classic",
+            )
+        else:
+            shutil.copyfile(concatenated_path, final_path)
 
         thumbnail_path = tmp_path / "thumbnail.png"
         render_service.generate_thumbnail(final_path, thumbnail_path)

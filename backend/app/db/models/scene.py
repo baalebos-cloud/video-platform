@@ -23,6 +23,7 @@ class Scene(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     negative_constraints: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict)
     visual_asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"))
+    caption_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     audio_asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"))
 
     video: Mapped["Video"] = relationship(back_populates="scenes")
