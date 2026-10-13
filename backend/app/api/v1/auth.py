@@ -1,6 +1,4 @@
 """Authentication: signup, login, token refresh."""
-import hashlib
-import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
