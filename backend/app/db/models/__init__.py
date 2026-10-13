@@ -10,6 +10,7 @@ from app.db.models.publishing import PublishingAccount, PublishedVideo
 from app.db.models.analytics import AnalyticsSnapshot
 from app.db.models.billing import CreditLedgerEntry
 from app.db.models.audit import AuditLog
+from app.db.models.admin_mfa import AdminMfaCredential
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "AnalyticsSnapshot",
     "CreditLedgerEntry",
     "AuditLog",
+    "AdminMfaCredential",
 ]

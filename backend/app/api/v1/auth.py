@@ -1,5 +1,6 @@
 """Authentication: signup, login, token refresh."""
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.security.rate_limit import RateLimiter
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,7 +62,11 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> 
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def login(
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(RateLimiter(limit=5, window_seconds=60, scope="password_login")),
+) -> TokenResponse:
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
