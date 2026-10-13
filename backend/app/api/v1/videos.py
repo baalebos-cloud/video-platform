@@ -4,6 +4,7 @@ in blueprint section 8.2 (`POST /videos/generate`) plus status/progress
 polling (8.4).
 """
 import hashlib
+import json
 import uuid
 from datetime import datetime
 
@@ -254,3 +255,83 @@ async def rerender_video(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Re-render queue unavailable")
 
     return RerenderResponse(video_id=video.id, job_id=job.id, status="queued")
+
+
+class RetryGenerationResponse(BaseModel):
+    video_id: uuid.UUID
+    job_id: uuid.UUID
+    status: str
+    message: str
+
+
+@router.post("/{video_id}/retry", response_model=RetryGenerationResponse)
+async def retry_failed_video(
+    video_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    _: None = Depends(RateLimiter(limit=3, window_seconds=60, scope="retry_failed_video")),
+    db: AsyncSession = Depends(get_db),
+) -> RetryGenerationResponse:
+    """Start one new video per failed source, preserving the failed original.
+
+    A retry is a NEW generation and may cost credits; it is never an
+    unsafe replay of a worker's partially completed side effects.
+    """
+    await require_video_owner(db, video_id, user.id)
+    source = await db.scalar(select(Video).where(Video.id == video_id).with_for_update())
+    if source is None or source.status != VideoStatus.FAILED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only failed videos can be retried")
+    retry_key = hashlib.sha256(f"{user.id}:retry:{video_id}".encode()).hexdigest()
+    previous = await quota_service.find_existing_job_by_idempotency_key(db, retry_key)
+    if previous:
+        return RetryGenerationResponse(video_id=previous.video_id, job_id=previous.id,
+            status=previous.status.value, message="Existing retry returned")
+
+    await quota_service.enforce_concurrent_job_limit(db, user.id)
+    from app.config.settings import get_settings
+    if source.duration_seconds > get_settings().max_video_duration_seconds:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Video duration now exceeds the generation limit")
+    # Snapshot all source settings so the retry is reproducible.
+    spec = {
+        "project_id": str(source.project_id), "topic": source.topic,
+        "language": source.language, "locale": source.locale,
+        "duration_seconds": source.duration_seconds,
+        "platform": source.platform, "visual_style": source.visual_style,
+        "creativity": source.creativity, "voice_preferences": source.voice_preferences,
+    }
+    fingerprint = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
+    try:
+        video, job = await video_service.start_generation(
+            db, project_id=source.project_id, topic=source.topic,
+            language=source.language, locale=source.locale,
+            duration_seconds=source.duration_seconds, platform=source.platform,
+            visual_style=source.visual_style, creativity=source.creativity,
+            voice_preferences=source.voice_preferences, idempotency_key=retry_key,
+            input_hash=fingerprint,
+        )
+    except IntegrityError:
+        await db.rollback()
+        previous = await quota_service.find_existing_job_by_idempotency_key(db, retry_key)
+        if previous:
+            return RetryGenerationResponse(video_id=previous.video_id, job_id=previous.id,
+                status=previous.status.value, message="Existing retry returned")
+        raise
+    return RetryGenerationResponse(video_id=video.id, job_id=job.id, status="queued",
+        message="New generation queued. Your original failed video is preserved.")
+
+
+@router.get("/{video_id}/jobs")
+async def video_job_history(
+    video_id: uuid.UUID,
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    """Owner-only recent attempt history for support and generation diagnosis."""
+    await require_video_owner(db, video_id, user.id)
+    result = await db.execute(select(GenerationJob).where(
+        GenerationJob.video_id == video_id,
+    ).order_by(GenerationJob.created_at.desc()).limit(20))
+    return {"items": [
+        {"id": str(job.id), "type": job.type.value, "status": job.status.value,
+         "attempts": job.attempts, "error_code": job.error_code,
+         "created_at": job.created_at, "updated_at": job.updated_at}
+        for job in result.scalars().all()
+    ]}
