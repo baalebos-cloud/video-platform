@@ -52,11 +52,17 @@ class Settings(BaseSettings):
     # gateway) — the full webhook URL to POST {"prompt": "..."} to.
     llm_gateway_url: str | None = None
     
-    voice_provider: str = "mock"
+    voice_provider: Literal["mock", "openai"] = "mock"
+    # Shared for both optional media providers. Keep server-side only.
+    openai_api_key: str | None = Field(default=None, repr=False)
+    openai_tts_model: str = "gpt-4o-mini-tts"
+    openai_tts_default_voice: str = "alloy"
+    openai_image_model: str = "gpt-image-1.5"
+    openai_image_quality: Literal["low", "medium", "high"] = "medium"
     google_cloud_project: str | None = None
     google_application_credentials: str | None = None
 
-    image_provider: str = "mock"
+    image_provider: Literal["mock", "openai"] = "mock"
     image_api_key: str | None = Field(default=None, repr=False)
 
     video_provider: str = "mock"
@@ -101,6 +107,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_secure_production_settings(self) -> "Settings":
+        if (self.voice_provider == "openai" or self.image_provider == "openai") and not (
+            self.openai_api_key and self.openai_api_key.strip()
+        ):
+            raise ValueError("OPENAI_API_KEY is required when VOICE_PROVIDER or IMAGE_PROVIDER is openai")
         if self.app_env == "production":
             if len(self.jwt_secret) < 32 or self.jwt_secret.lower().startswith(("replace", "dev-", "test-")):
                 raise ValueError("Production JWT_SECRET must be a strong, non-placeholder value (at least 32 characters)")
