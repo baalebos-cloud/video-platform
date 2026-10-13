@@ -68,8 +68,9 @@ def valid_unused_step(secret: str, code: str, last_used: int, *, now: float | No
 
 
 def provisioning_uri(secret: str, email: str) -> str:
-    account = quote(f"Baalebos:{email}", safe="")
-    issuer = quote("Baalebos Creator Studio", safe="")
+    issuer_name = "Baalebos Creator Studio"
+    account = quote(f"{issuer_name}:{email}", safe="")
+    issuer = quote(issuer_name, safe="")
     return f"otpauth://totp/{account}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
 
 

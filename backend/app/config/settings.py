@@ -131,8 +131,14 @@ class Settings(BaseSettings):
         except ValueError as exc:
             raise ValueError("ADMIN_USER_IDS_RAW must be comma-separated user UUIDs") from exc
         if self.app_env == "production":
-            if self.admin_user_ids and not self.admin_mfa_encryption_key:
-                raise ValueError("ADMIN_MFA_ENCRYPTION_KEY is required when production administrators are configured")
+            if self.admin_user_ids:
+                if not self.admin_mfa_encryption_key:
+                    raise ValueError("ADMIN_MFA_ENCRYPTION_KEY is required when production administrators are configured")
+                from cryptography.fernet import Fernet
+                try:
+                    Fernet(self.admin_mfa_encryption_key.encode("ascii"))
+                except (ValueError, TypeError):
+                    raise ValueError("ADMIN_MFA_ENCRYPTION_KEY must be a valid Fernet encryption key") from None
             if (self.voice_provider == "openai" or self.image_provider == "openai") and not self.credit_enforcement_enabled:
                 raise ValueError("CREDIT_ENFORCEMENT_ENABLED must be true for live media in production")
             if len(self.jwt_secret) < 32 or self.jwt_secret.lower().startswith(("replace", "dev-", "test-")):

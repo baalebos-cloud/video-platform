@@ -230,3 +230,20 @@ async def test_authorization_requires_enabled_factor():
             )
     assert exc.value.status_code == 403
     db.commit.assert_not_awaited()
+
+
+def test_production_rejects_malformed_mfa_key():
+    with pytest.raises(ValidationError, match="valid Fernet"):
+        Settings(
+            _env_file=None, app_env="production",
+            admin_user_ids_raw=str(uuid.uuid4()),
+            admin_mfa_encryption_key="invalid-key",
+            jwt_secret="secure-production-jwt-secret-stronger-than-thirty-two-characters",
+        )
+
+
+def test_provisioning_label_matches_issuer():
+    secret = security.generate_totp_secret()
+    uri = security.provisioning_uri(secret, "operator@example.com")
+    assert "Baalebos%20Creator%20Studio%3Aoperator%40example.com" in uri
+    assert "issuer=Baalebos%20Creator%20Studio" in uri
