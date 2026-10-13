@@ -31,7 +31,7 @@ export function DashboardShell({ children, wide = false }: {
 
   const nav = (
     <nav aria-label="Main navigation" className="space-y-1.5">
-      {MAIN_NAV.map((item) => {
+      {(user.is_admin ? [...MAIN_NAV, { href: "/dashboard/admin", label: "Administration", icon: "settings" as StudioIconName }] : MAIN_NAV).map((item) => {
         const active = item.href === "/dashboard"
           ? pathname === "/dashboard" || pathname.startsWith("/dashboard/projects")
           : pathname === item.href;

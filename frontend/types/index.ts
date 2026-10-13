@@ -3,6 +3,7 @@ export interface User {
   email: string;
   full_name: string | null;
   status: string;
+  is_admin?: boolean;
 }
 
 export interface Project {
