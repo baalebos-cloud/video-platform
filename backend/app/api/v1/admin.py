@@ -3,7 +3,7 @@ import uuid
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,24 +12,13 @@ from app.db.models.billing import CreditLedgerEntry, LedgerEntryType
 from app.db.models.user import User, UserStatus
 from app.db.session import get_db
 from app.security.admin import require_admin
+from app.security.credit_payload import CreditAdjustment
+from app.security.admin_mfa import require_adjustment_authorization
 from app.services import credit_service, usage_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-class CreditAdjustment(BaseModel):
-    user_id: uuid.UUID
-    amount: int = Field(ge=-1000, le=1000)
-    request_id: uuid.UUID
-    reason: str = Field(min_length=12, max_length=300)
-
-    @model_validator(mode="after")
-    def nonzero(self):
-        if not self.amount:
-            raise ValueError("Credit adjustment amount cannot be zero")
-        if not self.reason.strip() or len(self.reason.strip()) < 12:
-            raise ValueError("A meaningful adjustment reason is required")
-        return self
 
 
 @router.get("/users/lookup")
@@ -56,6 +45,7 @@ async def adjust_credits(
     payload: CreditAdjustment,
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    _verified: None = Depends(require_adjustment_authorization),
 ):
     # A database row lock, rather than an application mutex, serializes
     # concurrent requests across independent API instances.

@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.errors import http_exception_handler, unhandled_exception_handler, validation_exception_handler
-from app.api.v1 import admin, analytics, assets, auth, billing, captions, creator, jobs, projects, publishing, storyboards, users, videos, voices
+from app.api.v1 import admin, admin_mfa, analytics, assets, auth, billing, captions, creator, jobs, projects, publishing, storyboards, users, videos, voices
 from app.config.logging import configure_logging, get_logger
 from app.config.settings import get_settings
 from app.workers.worker import WorkerSettings
@@ -100,6 +100,7 @@ app.include_router(publishing.router, prefix=API_PREFIX)
 app.include_router(analytics.router, prefix=API_PREFIX)
 app.include_router(billing.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
+app.include_router(admin_mfa.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["ops"])
