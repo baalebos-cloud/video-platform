@@ -183,7 +183,7 @@ async def test_access_token_session_version_is_enforced():
     user = account()
     db = AsyncMock()
     result = MagicMock()
-    result.scalars.return_value.all.return_value = [user]
+    result.scalar_one_or_none.return_value = user
     db.execute.return_value = result
     request = Request({"type": "http", "headers": []})
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="example")
@@ -202,7 +202,7 @@ async def test_legacy_token_is_only_accepted_before_first_revocation():
     user = account()
     db = AsyncMock()
     result = MagicMock()
-    result.scalars.return_value.all.return_value = [user]
+    result.scalar_one_or_none.return_value = user
     db.execute.return_value = result
     request = Request({"type": "http", "headers": []})
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="example")
