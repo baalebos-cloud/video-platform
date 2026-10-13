@@ -42,7 +42,7 @@ async def test_email_delivery_disabled_returns_503_without_account_lookup():
 async def test_unknown_email_does_not_send_and_has_generic_response():
     db = AsyncMock()
     result = MagicMock()
-    result.scalar_one_or_none.return_value = None
+    result.scalars.return_value.all.return_value = []
     db.execute.return_value = result
     with patch.object(auth, "mail_delivery_configured", return_value=True), \
          patch.object(auth, "limit_password_reset_email", new_callable=AsyncMock, return_value=True), \
@@ -60,7 +60,7 @@ async def test_existing_account_gets_random_token_and_only_hash_persisted():
     user = account()
     db = AsyncMock()
     result = MagicMock()
-    result.scalar_one_or_none.return_value = user
+    result.scalars.return_value.all.return_value = [user]
     db.execute.return_value = result
     with patch.object(auth, "mail_delivery_configured", return_value=True), \
          patch.object(auth, "limit_password_reset_email", new_callable=AsyncMock, return_value=True), \
@@ -84,7 +84,7 @@ async def test_failed_email_does_not_expose_account_existence():
     user = account()
     db = AsyncMock()
     result = MagicMock()
-    result.scalar_one_or_none.return_value = user
+    result.scalars.return_value.all.return_value = [user]
     db.execute.return_value = result
     with patch.object(auth, "mail_delivery_configured", return_value=True), \
          patch.object(auth, "limit_password_reset_email", new_callable=AsyncMock, return_value=True), \
@@ -183,7 +183,7 @@ async def test_access_token_session_version_is_enforced():
     user = account()
     db = AsyncMock()
     result = MagicMock()
-    result.scalar_one_or_none.return_value = user
+    result.scalars.return_value.all.return_value = [user]
     db.execute.return_value = result
     request = Request({"type": "http", "headers": []})
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="example")
@@ -202,7 +202,7 @@ async def test_legacy_token_is_only_accepted_before_first_revocation():
     user = account()
     db = AsyncMock()
     result = MagicMock()
-    result.scalar_one_or_none.return_value = user
+    result.scalars.return_value.all.return_value = [user]
     db.execute.return_value = result
     request = Request({"type": "http", "headers": []})
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="example")
@@ -250,3 +250,34 @@ def test_account_security_routes_have_required_dependencies():
     for endpoint in (auth.change_password, auth.revoke_all_sessions):
         route = next(r for r in auth.router.routes if r.endpoint == endpoint)
         assert any(dep.call is get_current_user for dep in route.dependant.dependencies)
+
+
+@pytest.mark.asyncio
+async def test_legacy_case_only_duplicate_accounts_are_not_reset_ambiguously():
+    first, second = account(), account()
+    first.email = "Creator@example.com"
+    second.email = "creator@example.com"
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [first, second]
+    db = AsyncMock()
+    db.execute.return_value = result
+    with patch.object(auth, "mail_delivery_configured", return_value=True), \
+         patch.object(auth, "limit_password_reset_email", new_callable=AsyncMock, return_value=True), \
+         patch.object(auth, "send_password_reset_email", new_callable=AsyncMock) as send:
+        await auth.request_password_reset(auth.PasswordResetRequest(email="creator@example.com"), db=db)
+    send.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_signup_normalizes_email_and_rejects_existing_casing():
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = SimpleNamespace(email="Existing@EXAMPLE.COM")
+    db = AsyncMock()
+    db.execute.return_value = result
+    with pytest.raises(HTTPException) as exc:
+        await auth.signup(auth.SignupRequest(
+            email="existing@example.com", password="a sufficiently long password",
+        ), db=db)
+    assert exc.value.status_code == 409
+    db.commit.assert_not_awaited()

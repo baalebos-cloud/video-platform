@@ -42,11 +42,12 @@ class TokenResponse(BaseModel):
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    existing = await db.execute(select(User).where(User.email == payload.email))
+    normalized_email = str(payload.email).strip().lower()
+    existing = await db.execute(select(User).where(func.lower(User.email) == normalized_email))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists")
 
-    user = User(email=payload.email, password_hash=hash_password(payload.password), full_name=payload.full_name)
+    user = User(email=normalized_email, password_hash=hash_password(payload.password), full_name=payload.full_name)
     db.add(user)
     await db.flush()
     settings = get_settings()
@@ -121,8 +122,10 @@ async def request_password_reset(
     # Per-account throttling is applied even for unknown addresses.
     if not await limit_password_reset_email(email):
         return {"message": "If an account exists, a reset link will be emailed."}
-    result = await db.execute(select(User).where(func.lower(User.email) == email))
-    user = result.scalar_one_or_none()
+    result = await db.execute(select(User).where(func.lower(User.email) == email).limit(2))
+    accounts = list(result.scalars().all())
+    # Legacy case-sensitive duplicates must never result in an ambiguous grant.
+    user = accounts[0] if len(accounts) == 1 else None
     if user and user.status == UserStatus.ACTIVE:
         token = secrets.token_urlsafe(32)
         await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
