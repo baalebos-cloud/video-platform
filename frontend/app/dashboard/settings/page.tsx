@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, ApiError } from "@/lib/api/client";
-import { clearAccessToken } from "@/lib/auth/token";
+
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -18,7 +18,6 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
 
   function exitToLogin() {
-    clearAccessToken();
     router.replace("/login");
   }
 
