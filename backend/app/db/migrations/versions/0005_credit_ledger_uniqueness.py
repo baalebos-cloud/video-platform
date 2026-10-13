@@ -4,6 +4,7 @@ Revision ID: 0005_credit_ledger_uniqueness
 Revises: 0004_scene_audio_and_rerender
 """
 from alembic import op
+import sqlalchemy as sa
 
 revision = "0005_credit_ledger_uniqueness"
 down_revision = "0004_scene_audio_and_rerender"
@@ -17,7 +18,7 @@ def upgrade() -> None:
         "credit_ledger",
         ["user_id", "entry_type", "reference_type", "reference_id", "currency"],
         unique=True,
-        postgresql_where="currency = 'CRD' AND reference_id IS NOT NULL",
+        postgresql_where=sa.text("currency = 'CRD' AND reference_id IS NOT NULL"),
     )
 
 

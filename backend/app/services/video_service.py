@@ -84,7 +84,11 @@ async def start_generation(
         job.status = JobStatus.FAILED
         job.error_code = "queue_unavailable"
         job.error_message = video.error_message
-        await credit_service.refund(db, project.user_id, reference_type="video_generation", reference_id=str(job.id)) if settings.credit_enforcement_enabled else None
+        if settings.credit_enforcement_enabled:
+            await credit_service.refund(
+                db, project.user_id,
+                reference_type="video_generation", reference_id=str(job.id),
+            )
         await db.commit()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Generation queue unavailable")
     return video, job
