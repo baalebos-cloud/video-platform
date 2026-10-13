@@ -25,6 +25,10 @@ interface AdjustmentResult {
   balance: string;
   currency: string;
 }
+interface Enrollment {
+  secret: string;
+  otpauth_uri: string;
+}
 
 export default function AdministrationPage() {
   const { user, loading } = useAuth();
@@ -40,6 +44,54 @@ export default function AdministrationPage() {
   const [days, setDays] = useState(30);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
+  const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null);
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [enrollPassword, setEnrollPassword] = useState("");
+  const [activationCode, setActivationCode] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [authPassword, setAuthPassword] = useState("");
+  const [authCode, setAuthCode] = useState("");
+  const [stepUpToken, setStepUpToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.is_admin) return;
+    let active = true;
+    apiRequest<{ enabled: boolean }>("/admin/mfa/status")
+      .then(data => { if (active) setMfaEnabled(data.enabled); })
+      .catch(() => { if (active) setError("Unable to verify authenticator status."); });
+    return () => { active = false; };
+  }, [user?.is_admin]);
+
+  async function startEnrollment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSetupBusy(true);
+    setError(null);
+    try {
+      const result = await apiRequest<Enrollment>("/admin/mfa/enroll", {
+        method: "POST", body: { password: enrollPassword },
+      });
+      setEnrollment(result);
+      setEnrollPassword("");
+      setFeedback("Add this secret to an authenticator app and confirm a current six-digit code.");
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Could not begin authenticator enrollment.");
+    } finally { setSetupBusy(false); }
+  }
+
+  async function activateMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSetupBusy(true);
+    setError(null);
+    try {
+      await apiRequest("/admin/mfa/activate", { method: "POST", body: { code: activationCode } });
+      setEnrollment(null);
+      setActivationCode("");
+      setMfaEnabled(true);
+      setFeedback("Authenticator enabled. Every credit adjustment now requires your password and a fresh code.");
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Authenticator verification failed.");
+    } finally { setSetupBusy(false); }
+  }
 
   useEffect(() => {
     if (!user?.is_admin) return;
@@ -61,6 +113,7 @@ export default function AdministrationPage() {
     try {
       setAccount(await apiRequest<Account>(`/admin/users/lookup?email=${encodeURIComponent(email.trim())}`));
       setRequestId(null);
+      setStepUpToken(null);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Account lookup failed.");
     } finally { setLookupBusy(false); }
@@ -74,23 +127,42 @@ export default function AdministrationPage() {
     setFeedback(null);
     const id = requestId || crypto.randomUUID();
     setRequestId(id);
+    const adjustment = {
+      user_id: account.id, amount: Number(amount),
+      reason: reason.trim(), request_id: id,
+    };
     try {
+      let authorization = stepUpToken;
+      if (!authorization) {
+        const result = await apiRequest<{ authorization_token: string }>(
+          "/admin/mfa/authorize-adjustment", {
+            method: "POST",
+            body: { password: authPassword, code: authCode, adjustment },
+          },
+        );
+        authorization = result.authorization_token;
+        setStepUpToken(authorization);
+        // Never persist the password or authenticator code in localStorage.
+        setAuthPassword("");
+        setAuthCode("");
+      }
       const result = await apiRequest<AdjustmentResult>("/admin/credits/adjust", {
         method: "POST",
-        body: {
-          user_id: account.id,
-          amount: Number(amount),
-          reason: reason.trim(),
-          request_id: id,
-        },
+        headers: { "X-Admin-Authorization": authorization },
+        body: adjustment,
       });
       setAccount({ ...account, balance: result.balance });
       setFeedback(result.applied
         ? "Credit adjustment recorded with an audit entry."
         : "This request was already applied; no second adjustment was made.");
       setRequestId(null);
+      setStepUpToken(null);
     } catch (cause) {
-      // Preserve request ID: safe retry without granting a second adjustment.
+      // The same request ID and authorization remain for a safe network retry.
+      // Expired or rejected approvals must be obtained again with a new OTP.
+      if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) {
+        setStepUpToken(null);
+      }
       setError(cause instanceof ApiError ? cause.message : "Adjustment could not be confirmed; retry with the same inputs.");
     } finally { setAdjustBusy(false); }
   }
@@ -107,6 +179,58 @@ export default function AdministrationPage() {
       : !user?.is_admin ? <div role="alert" className="studio-surface p-6 text-sm text-rose-300">
         You do not have administrator access.
       </div> : <>
+      <section className="studio-surface mb-6 p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="studio-eyebrow mb-1">Privileged account protection</p>
+            <h2 className="text-lg font-semibold">Authenticator security</h2>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${mfaEnabled ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-400/10 text-amber-200"}`}>
+            {mfaEnabled === null ? "Checking…" : mfaEnabled ? "Authenticator enabled" : "Setup required"}
+          </span>
+        </div>
+        {mfaEnabled ? <p className="text-sm text-[#a8afc6]">
+          Protected credit adjustments require your password and a fresh authenticator code.
+          Codes cannot be reused after a successful authorization.
+        </p> : <>
+          <p className="mb-4 text-sm leading-relaxed text-[#abb0c5]">
+            Connect an authenticator app before changing customer credits. Your secret is shown only during setup.
+          </p>
+          {!enrollment ? <form onSubmit={startEnrollment} className="flex flex-wrap items-end gap-3">
+            <label className="min-w-[220px] flex-1 text-xs font-semibold text-[#b4bad1]">
+              Confirm your administrator password
+              <input type="password" autoComplete="current-password" required value={enrollPassword}
+                onChange={event => setEnrollPassword(event.target.value)} className="studio-input mt-2" />
+            </label>
+            <button className="studio-button-secondary" type="submit" disabled={setupBusy || !enrollPassword}>
+              {setupBusy ? "Starting…" : "Begin setup"}
+            </button>
+          </form> : <div className="space-y-4">
+            <div className="rounded-xl border border-violet-400/20 bg-[#111320] p-4">
+              <p className="mb-2 text-xs font-semibold text-[#cbc8e6]">Enter this key manually in your authenticator app</p>
+              <code className="block break-all text-sm font-semibold tracking-wider text-white">{enrollment.secret}</code>
+              <p className="mt-3 break-all text-[11px] text-[#9da2bc]">
+                Alternatively, use the provisioning URI supported by your authenticator app:
+                <code className="mt-2 block break-all">{enrollment.otpauth_uri}</code>
+              </p>
+              <p className="mt-3 text-xs text-amber-200">
+                Keep this secret private. Do not share screenshots of this setup screen.
+              </p>
+            </div>
+            <form onSubmit={activateMfa} className="flex flex-wrap items-end gap-3">
+              <label className="text-xs font-semibold text-[#b4bad1]">
+                Six-digit authenticator code
+                <input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
+                  required value={activationCode} onChange={event => setActivationCode(event.target.value)}
+                  className="studio-input mt-2" />
+              </label>
+              <button className="studio-button" type="submit" disabled={setupBusy || !/^[0-9]{6}$/.test(activationCode)}>
+                {setupBusy ? "Verifying…" : "Enable authenticator"}
+              </button>
+            </form>
+          </div>}
+        </>}
+      </section>
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="studio-surface p-6">
           <div className="mb-5 flex items-center gap-3">
@@ -139,21 +263,36 @@ export default function AdministrationPage() {
               <label className="block text-xs font-semibold text-[#b4b8cf]">
                 Adjustment in CRD (negative removes credits)
                 <input type="number" min={-1000} max={1000} required value={amount}
-                  onChange={e => { setAmount(e.target.value); setRequestId(null); }}
+                  onChange={e => { setAmount(e.target.value); setRequestId(null); setStepUpToken(null); }}
                   className="studio-input mt-2" />
               </label>
               <label className="block text-xs font-semibold text-[#b4b8cf]">
                 Reason for change (12 characters minimum)
                 <textarea rows={3} minLength={12} maxLength={300} required value={reason}
-                  onChange={e => { setReason(e.target.value); setRequestId(null); }}
+                  onChange={e => { setReason(e.target.value); setRequestId(null); setStepUpToken(null); }}
                   className="studio-input mt-2" placeholder="Explain the authorized adjustment…" />
               </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-[#b4b8cf]">
+                  Administrator password
+                  <input type="password" autoComplete="current-password" value={authPassword}
+                    onChange={event => { setAuthPassword(event.target.value); setStepUpToken(null); }}
+                    className="studio-input mt-2" />
+                </label>
+                <label className="block text-xs font-semibold text-[#b4b8cf]">
+                  Fresh authenticator code
+                  <input inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+                    autoComplete="one-time-code" value={authCode}
+                    onChange={event => { setAuthCode(event.target.value); setStepUpToken(null); }}
+                    className="studio-input mt-2" />
+                </label>
+              </div>
               <p className="text-xs text-[#9ca0b8]">
-                Every successful adjustment creates a credit-ledger entry and administrator audit record.
-                You cannot adjust your own account.
+                A fresh password and authenticator code authorize one specific adjustment.
+                If a network request fails, retrying the same request ID cannot grant credits twice.
               </p>
               <button type="submit"
-                disabled={adjustBusy || !Number.isInteger(Number(amount)) || Number(amount) === 0 || reason.trim().length < 12}
+                disabled={!mfaEnabled || adjustBusy || (!stepUpToken && (!authPassword || !/^[0-9]{6}$/.test(authCode))) || !Number.isInteger(Number(amount)) || Number(amount) === 0 || reason.trim().length < 12}
                 className="studio-button">
                 <StudioIcon name="check" size={16} /> {adjustBusy ? "Submitting…" : "Apply adjustment"}
               </button>
