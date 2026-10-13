@@ -48,6 +48,7 @@ class Video(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     error_message: Mapped[str | None] = mapped_column(String(2048))
     needs_rerender: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    caption_style: Mapped[str] = mapped_column(String(32), nullable=False, default="classic", server_default="classic")
 
     project: Mapped["Project"] = relationship(back_populates="videos")
     scripts: Mapped[list["Script"]] = relationship(back_populates="video", cascade="all, delete-orphan")

@@ -27,6 +27,8 @@ from sqlalchemy import select
 from app.db.session import session_scope
 from app.security.auth import hash_password
 from app.workers.tasks.pipeline_task import generation_pipeline
+from app.api.v1.captions import CaptionEdit, edit_captions, get_captions
+from app.api.v1.creator import creator_overview
 
 settings = get_settings()
 
@@ -90,7 +92,16 @@ async def main() -> int:
         scenes = (await db.execute(select(Scene).where(Scene.video_id == video.id))).scalars().all()
         assert scenes and all(s.visual_asset_id and s.audio_asset_id for s in scenes)
         assert video.thumbnail_asset_id
-        video.needs_rerender = True
+        # Exercise the same caption and style endpoints as the creator UI.
+        await edit_captions(
+            video.id, CaptionEdit(scene_id=scenes[0].id, text="Edited in creator studio"),
+            user=user, db=db,
+        )
+        await edit_captions(video.id, CaptionEdit(style="social"), user=user, db=db)
+        captions = await get_captions(video.id, user=user, db=db)
+        assert captions["style"] == "social"
+        assert captions["scenes"][0]["text"] == "Edited in creator studio"
+        assert video.needs_rerender
         video.status = VideoStatus.RENDERING
         render_job = GenerationJob(video_id=video.id, type=JobType.RENDER, status=JobStatus.QUEUED)
         db.add(render_job)
@@ -108,7 +119,12 @@ async def main() -> int:
         assert updated_video.needs_rerender is False
         new_asset = await db.get(Asset, updated_video.output_asset_id)
         assert get_object_bytes(new_asset.storage_key)[4:8] == b"ftyp"
-    print("SMOKE TEST PASSED: generation and saved-asset re-render produced valid MP4 files.")
+        overview = await creator_overview(user=user, db=db)
+        assert overview["stats"]["projects"] == 1
+        assert overview["stats"]["total_videos"] == 1
+        assert overview["stats"]["views"] == 0
+        assert len(overview["recent_videos"]) == 1
+    print("SMOKE TEST PASSED: creator overview, caption edits and two rendered MP4s.")
     return 0
 
 

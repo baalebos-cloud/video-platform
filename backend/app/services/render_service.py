@@ -64,12 +64,25 @@ def concatenate_clips(clip_paths: list[Path], output_path: Path) -> None:
         Path(concat_list).unlink(missing_ok=True)
 
 
-def burn_in_captions(video_path: Path, srt_path: Path, output_path: Path) -> None:
+# Explicit, server-owned caption presets; never interpolate free-form FFmpeg filters.
+CAPTION_STYLES = {
+    "classic": "Fontsize=24,Alignment=2,MarginV=80,Outline=2,PrimaryColour=&H00FFFFFF",
+    "bold": "Fontsize=34,Bold=1,Alignment=2,MarginV=96,Outline=3,PrimaryColour=&H00FFFFFF",
+    "social": "Fontsize=32,Bold=1,Alignment=2,MarginV=110,Outline=3,PrimaryColour=&H0000FFFF",
+    "minimal": "Fontsize=21,Alignment=2,MarginV=70,Outline=1,PrimaryColour=&H00FFFFFF",
+}
+
+
+def burn_in_captions(
+    video_path: Path, srt_path: Path, output_path: Path, *, style: str = "classic"
+) -> None:
+    if style not in CAPTION_STYLES:
+        raise RenderError("Unsupported caption style")
     _run(
         [
             "ffmpeg", "-y",
             "-i", str(video_path),
-            "-vf", f"subtitles={srt_path}:force_style='Fontsize=24,Alignment=2,MarginV=80'",
+            "-vf", f"subtitles={srt_path}:force_style='{CAPTION_STYLES[style]}'",
             "-c:a", "copy",
             str(output_path),
         ]

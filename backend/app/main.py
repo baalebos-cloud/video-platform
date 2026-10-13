@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.errors import http_exception_handler, unhandled_exception_handler, validation_exception_handler
-from app.api.v1 import analytics, assets, auth, billing, jobs, projects, publishing, storyboards, users, videos, voices
+from app.api.v1 import analytics, assets, auth, billing, captions, creator, jobs, projects, publishing, storyboards, users, videos, voices
 from app.config.logging import configure_logging, get_logger
 from app.config.settings import get_settings
 from app.workers.worker import WorkerSettings
@@ -91,6 +91,8 @@ app.include_router(users.router, prefix=API_PREFIX)
 app.include_router(projects.router, prefix=API_PREFIX)
 app.include_router(videos.router, prefix=API_PREFIX)
 app.include_router(storyboards.router, prefix=API_PREFIX)
+app.include_router(captions.router, prefix=API_PREFIX)
+app.include_router(creator.router, prefix=API_PREFIX)
 app.include_router(jobs.router, prefix=API_PREFIX)
 app.include_router(voices.router, prefix=API_PREFIX)
 app.include_router(assets.router, prefix=API_PREFIX)

@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-}
+html { scroll-behavior: smooth; }
+/* Creator shell uses its own dark canvas; marketing/login pages stay light. */
+::selection { background: #6f57d5; color: #fff; }
+.studio-surface { @apply rounded-2xl border border-white/[0.08] bg-[#181a27]; }
+.studio-surface-soft { @apply rounded-2xl border border-white/[0.07] bg-[#141623]; }
+.studio-input { @apply w-full rounded-xl border border-white/10 bg-[#10121e] px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-[#6d728d] focus:border-violet-400/60 focus:ring-2 focus:ring-violet-400/10; }
+.studio-button { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#7657f6] to-[#9c55ed] px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-800/15 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50; }
+.studio-button-secondary { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-[#dbddec] transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50; }
+.studio-eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8d91ae]; }
+.studio-stat { @apply rounded-2xl border border-white/[0.08] bg-[#171926] p-5; }
+.studio-caption-classic { color: #fff; font-weight: 700; text-shadow: 0 2px 5px #000, 0 -1px 3px #000; }
+.studio-caption-bold { color: #fff; font-size: 1.3em; font-weight: 900; text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000; }
+.studio-caption-social { color: #ffe96b; font-size: 1.2em; font-weight: 900; text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000; }
+.studio-caption-minimal { color: #fff; font-size: .85em; font-weight: 500; text-shadow: 0 1px 3px #000; }
