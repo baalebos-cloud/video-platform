@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,6 +16,29 @@ export default function SettingsPage() {
   const [revokePassword, setRevokePassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Array<{
+    id: string; created_at: string; expires_at: string; current: boolean;
+  }>>([]);
+  const [sessionsError, setSessionsError] = useState("");
+  useEffect(() => {
+    let mounted = true;
+    apiRequest<{sessions: typeof sessions}>("/auth/sessions")
+      .then(data => {if(mounted) setSessions(data.sessions);})
+      .catch(()=>{if(mounted) setSessionsError("Unable to load sessions.");});
+    return () => {mounted = false;};
+  }, []);
+
+  async function revokeOne(id: string, isCurrent: boolean) {
+    setError(null);
+    try {
+      await apiRequest(`/auth/sessions/${id}`, {method:"DELETE"});
+      setSessions(previous=>previous.filter(row=>row.id!==id));
+      if (isCurrent) exitToLogin();
+    } catch(e) {
+      setError(e instanceof ApiError ? e.message : "Unable to revoke session.");
+    }
+  }
+
 
   function exitToLogin() {
     router.replace("/login");
@@ -99,6 +122,24 @@ export default function SettingsPage() {
           {busy ? "Saving…" : "Update password and sign out"}
         </button>
       </form>
+    </section>
+
+    <section className="studio-surface mb-6 max-w-2xl p-6">
+      <h2 className="mb-2 text-lg font-semibold">Active sessions</h2>
+      <p className="mb-4 text-sm text-[#a4a8be]">Review devices with an active refresh session and revoke access individually.</p>
+      {sessionsError&&<p role="alert" className="text-xs text-rose-300">{sessionsError}</p>}
+      <div className="space-y-3">
+        {sessions.map(session=><div key={session.id} className="flex flex-wrap justify-between gap-3 rounded-xl border border-white/10 p-3">
+          <div className="text-xs text-[#ccd0df]">
+            <span className="font-semibold">{session.current ? "This device" : "Signed-in session"}</span>
+            <div>Created {new Date(session.created_at).toLocaleString()}</div>
+            <div>Expires {new Date(session.expires_at).toLocaleString()}</div>
+          </div>
+          <button type="button" className="studio-button-secondary"
+            onClick={()=>void revokeOne(session.id,session.current)}>Revoke</button>
+        </div>)}
+        {!sessions.length&&!sessionsError&&<p className="text-xs text-[#8d93ac]">No listed sessions.</p>}
+      </div>
     </section>
 
     <section className="studio-surface max-w-2xl p-6">

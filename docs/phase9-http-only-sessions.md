@@ -8,7 +8,9 @@
 - Sign out revokes current refresh token; change password/reset and sign-out-
   everywhere invalidate access via session_version.
 - Session listing and single-session revocation require a logged-in user;
-  per-user ownership checked in SQL.
+  per-user ownership checked in SQL. New access JWTs include a session id,
+  so single-session revocation immediately invalidates access as well as refresh.
+  Creator Settings displays sessions with a current-device marker.
 - Proxy passes through JSON and binary but never forwards upstream Set-Cookie.
 - Existing legacy localStorage tokens will be cleared and users must sign
   in again. Direct API JWT consumers are still supported if they use login.

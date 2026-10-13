@@ -1,5 +1,7 @@
 """Authentication: signup, login, token refresh."""
 import secrets
+from fastapi import Request
+from app.security.auth import decode_token
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -222,13 +224,19 @@ async def logout_session(payload: RefreshRequest, db: AsyncSession = Depends(get
 
 
 @router.get("/sessions")
-async def list_sessions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_sessions(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    bearer = request.headers.get("Authorization", "")
+    try:
+        current_sid = decode_token(bearer[7:]).get("sid") if bearer.startswith("Bearer ") else None
+    except Exception:
+        current_sid = None
     rows = (await db.execute(select(UserSession).where(
         UserSession.user_id == user.id,
         UserSession.revoked.is_(False),
         UserSession.expires_at > datetime.now(timezone.utc),
     ).order_by(UserSession.created_at.desc()).limit(50))).scalars().all()
-    return {"sessions": [{"id": str(row.id), "created_at": row.created_at, "expires_at": row.expires_at} for row in rows]}
+    return {"sessions": [{"id": str(row.id), "created_at": row.created_at, "expires_at": row.expires_at,
+                           "current": str(row.id) == current_sid} for row in rows]}
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

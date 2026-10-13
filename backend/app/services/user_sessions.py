@@ -20,13 +20,13 @@ def _issue(user: User, session: UserSession) -> dict:
     session.refresh_hash = _digest(jti)
     session.expires_at = datetime.now(timezone.utc) + timedelta(days=get_settings().refresh_token_expire_days)
     return {
-        "access_token": create_access_token(str(user.id), {"sv": user.session_version}),
+        "access_token": create_access_token(str(user.id), {"sv": user.session_version, "sid": str(session.id)}),
         "refresh_token": create_refresh_token(str(user.id), session_version=user.session_version, jti=jti),
         "token_type": "bearer",
     }
 
 async def create_session(db: AsyncSession, user: User) -> dict:
-    session = UserSession(user_id=user.id, refresh_hash="x" * 64,
+    session = UserSession(id=uuid.uuid4(), user_id=user.id, refresh_hash="x" * 64,
                           expires_at=datetime.now(timezone.utc), revoked=False)
     response = _issue(user, session)
     db.add(session)
