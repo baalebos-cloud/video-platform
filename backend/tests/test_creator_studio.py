@@ -43,7 +43,7 @@ async def test_project_videos_returns_paginated_owned_results():
     owner.assert_awaited_once_with(db, project_id, user.id)
     assert page.items == [] and page.total == 0
     assert db.scalar.await_count == 1 and db.execute.await_count == 1
-    assert str(project_id) in str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert project_id.hex in str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
 
 
 @pytest.mark.asyncio
