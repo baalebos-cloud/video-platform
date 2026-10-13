@@ -37,5 +37,12 @@ async def get_current_user(
     if user is None or user.status != UserStatus.ACTIVE:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account is not active")
 
+    # Tokens issued before this migration have no sv claim: treat as version 0.
+    # Any password change, password recovery, or logout-all increments the version.
+    if (not isinstance(payload.get("sv", 0), int)
+            or isinstance(payload.get("sv", 0), bool)
+            or payload.get("sv", 0) != user.session_version):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session has been revoked")
+
     request.state.user = user  # available to the rate limiter
     return user

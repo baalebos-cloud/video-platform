@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # in the deployment secret manager. Changing this key invalidates MFA
     # enrollment unless the credentials are securely migrated.
     admin_mfa_encryption_key: str | None = Field(default=None, repr=False)
+    # Optional transactional password reset email delivery (Resend HTTPS API).
+    reset_email_api_key: str | None = Field(default=None, repr=False)
+    reset_email_from: str | None = None
 
     # --- Database ---
     database_url: str = "postgresql+asyncpg://app:password@localhost:5432/aivideo"
@@ -131,6 +134,10 @@ class Settings(BaseSettings):
         except ValueError as exc:
             raise ValueError("ADMIN_USER_IDS_RAW must be comma-separated user UUIDs") from exc
         if self.app_env == "production":
+            if bool(self.reset_email_api_key) != bool(self.reset_email_from):
+                raise ValueError("RESET_EMAIL_API_KEY and RESET_EMAIL_FROM must be configured together")
+            if self.reset_email_api_key and not self.app_url.startswith("https://"):
+                raise ValueError("APP_URL must use https:// for production password reset links")
             if self.admin_user_ids:
                 if not self.admin_mfa_encryption_key:
                     raise ValueError("ADMIN_MFA_ENCRYPTION_KEY is required when production administrators are configured")
