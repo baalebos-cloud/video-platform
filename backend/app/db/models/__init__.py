@@ -12,6 +12,7 @@ from app.db.models.billing import CreditLedgerEntry
 from app.db.models.audit import AuditLog
 from app.db.models.admin_mfa import AdminMfaCredential
 from app.db.models.password_reset import PasswordResetToken
+from app.db.models.user_session import UserSession
 
 __all__ = [
     "User",
@@ -29,4 +30,5 @@ __all__ = [
     "AuditLog",
     "AdminMfaCredential",
     "PasswordResetToken",
+    "UserSession",
 ]

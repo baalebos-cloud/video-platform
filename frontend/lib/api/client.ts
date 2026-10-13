@@ -1,70 +1,33 @@
-/**
- * Thin fetch wrapper for the FastAPI backend. Kept dependency-free (no
- * axios) so the frontend bundle stays small; swap for a generated
- * OpenAPI client as the API surface grows.
- */
-import { getAccessToken } from "@/lib/auth/token";
-
-// Trailing slash(es) stripped defensively: NEXT_PUBLIC_API_URL is a
-// hand-typed env var on Vercel, and a value like
-// "https://api.example.com/" (instead of the intended
-// "https://api.example.com/api/v1") produces a double-slash path like
-// "//auth/signup" once concatenated with a path — which 400s/404s at
-// the backend. Stripping here means a stray trailing slash can no
-// longer break every request.
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1").replace(/\/+$/, "");
-
+/** Same-origin API proxy; bearer tokens are stored only in HttpOnly cookies. */
 export class ApiError extends Error {
   status: number;
   errorCode?: string;
-
   constructor(status: number, message: string, errorCode?: string) {
-    super(message);
-    this.status = status;
-    this.errorCode = errorCode;
+    super(message); this.status = status; this.errorCode = errorCode;
   }
 }
-
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   body?: unknown;
   headers?: Record<string, string>;
   auth?: boolean;
 }
-
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, headers = {}, auth = true } = options;
-
-  const finalHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...headers,
-  };
-
-  if (auth) {
-    const token = getAccessToken();
-    if (token) finalHeaders.Authorization = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: finalHeaders,
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
+  const {method = "GET", body, headers = {}} = options;
+  const response = await fetch(`/api/gateway${path}`, {
+    method, headers: {"Content-Type":"application/json", ...headers},
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store", credentials: "same-origin",
   });
-
   if (!response.ok) {
-    let message = response.statusText;
-    let errorCode: string | undefined;
+    let message = response.statusText, errorCode: string | undefined;
     try {
       const data = await response.json();
-      message = data.message ?? message;
+      message = data.message ?? (typeof data.detail === "string" ? data.detail : message);
       errorCode = data.error_code;
-    } catch {
-      // response body wasn't JSON — fall back to statusText
-    }
+    } catch { /* non-JSON failure */ }
     throw new ApiError(response.status, message, errorCode);
   }
-
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }

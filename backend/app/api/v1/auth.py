@@ -1,5 +1,8 @@
 """Authentication: signup, login, token refresh."""
 import secrets
+from fastapi import Request
+from app.security.auth import decode_token
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,7 +21,9 @@ from app.config.settings import get_settings
 from app.db.models.billing import CreditLedgerEntry, LedgerEntryType
 from app.services.credit_service import CREDIT_CURRENCY
 from app.db.session import get_db
-from app.security.auth import create_access_token, create_refresh_token, hash_password, verify_password
+from app.security.auth import hash_password, verify_password
+from app.services.user_sessions import create_session, rotate_session, revoke_refresh
+from app.db.models.user_session import UserSession
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -64,10 +69,7 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> 
     await db.commit()
     await db.refresh(user)
 
-    return TokenResponse(
-        access_token=create_access_token(str(user.id), {"sv": user.session_version}),
-        refresh_token=create_refresh_token(str(user.id), session_version=user.session_version),
-    )
+    return TokenResponse(**(await create_session(db, user)))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -83,10 +85,7 @@ async def login(
 
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
-    return TokenResponse(
-        access_token=create_access_token(str(user.id), {"sv": user.session_version}),
-        refresh_token=create_refresh_token(str(user.id), session_version=user.session_version),
-    )
+    return TokenResponse(**(await create_session(db, user)))
 
 
 
@@ -206,4 +205,47 @@ async def revoke_all_sessions(
     account.session_version += 1
     db.add(AuditLog(actor_id=account.id, action="all_sessions_revoked",
                     resource="user", resource_id=str(account.id), audit_metadata={}))
+    await db.commit()
+
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=20, max_length=4096)
+
+
+@router.post("/sessions/refresh", response_model=TokenResponse)
+async def refresh_session(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    return TokenResponse(**(await rotate_session(db, payload.refresh_token)))
+
+
+@router.post("/sessions/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_session(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    await revoke_refresh(db, payload.refresh_token)
+
+
+@router.get("/sessions")
+async def list_sessions(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    bearer = request.headers.get("Authorization", "")
+    try:
+        current_sid = decode_token(bearer[7:]).get("sid") if bearer.startswith("Bearer ") else None
+    except Exception:
+        current_sid = None
+    rows = (await db.execute(select(UserSession).where(
+        UserSession.user_id == user.id,
+        UserSession.revoked.is_(False),
+        UserSession.expires_at > datetime.now(timezone.utc),
+    ).order_by(UserSession.created_at.desc()).limit(50))).scalars().all()
+    return {"sessions": [{"id": str(row.id), "created_at": row.created_at, "expires_at": row.expires_at,
+                           "current": str(row.id) == current_sid} for row in rows]}
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_session(session_id: uuid.UUID, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    session = await db.scalar(select(UserSession).where(
+        UserSession.id == session_id, UserSession.user_id == user.id,
+    ).with_for_update())
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    session.revoked = True
     await db.commit()
