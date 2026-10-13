@@ -11,6 +11,7 @@ from app.db.models.analytics import AnalyticsSnapshot
 from app.db.models.billing import CreditLedgerEntry
 from app.db.models.audit import AuditLog
 from app.db.models.admin_mfa import AdminMfaCredential
+from app.db.models.password_reset import PasswordResetToken
 
 __all__ = [
     "User",
@@ -27,4 +28,5 @@ __all__ = [
     "CreditLedgerEntry",
     "AuditLog",
     "AdminMfaCredential",
+    "PasswordResetToken",
 ]
