@@ -7,6 +7,7 @@ are safe-for-local-dev placeholders only.
 """
 from functools import lru_cache
 from typing import Literal
+import uuid
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +28,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 14
+    # Privileged user IDs are provisioned by the operator. NEVER grant
+    # privileges based on an unverified signup email address.
+    admin_user_ids_raw: str = ""
 
     # --- Database ---
     database_url: str = "postgresql+asyncpg://app:password@localhost:5432/aivideo"
@@ -118,6 +122,10 @@ class Settings(BaseSettings):
             self.openai_api_key and self.openai_api_key.strip()
         ):
             raise ValueError("OPENAI_API_KEY is required when VOICE_PROVIDER or IMAGE_PROVIDER is openai")
+        try:
+            self.admin_user_ids
+        except ValueError as exc:
+            raise ValueError("ADMIN_USER_IDS_RAW must be comma-separated user UUIDs") from exc
         if self.app_env == "production":
             if (self.voice_provider == "openai" or self.image_provider == "openai") and not self.credit_enforcement_enabled:
                 raise ValueError("CREDIT_ENFORCEMENT_ENABLED must be true for live media in production")
@@ -126,6 +134,12 @@ class Settings(BaseSettings):
             if self.debug:
                 raise ValueError("DEBUG must be disabled in production")
         return self
+
+    @property
+    def admin_user_ids(self) -> frozenset[uuid.UUID]:
+        return frozenset(
+            uuid.UUID(value.strip()) for value in self.admin_user_ids_raw.split(",") if value.strip()
+        )
 
     @property
     def cors_allowed_origins(self) -> list[str]:
