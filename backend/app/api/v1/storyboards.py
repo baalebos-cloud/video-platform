@@ -101,18 +101,20 @@ async def regenerate_scene(
         await db.commit()
     try:
         result = await visual_service.generate_scene_image(prompt=scene.visual_prompt, aspect_ratio=video.aspect_ratio)
+        storage_key, _c, _s = await asyncio.to_thread(
+            storage_service.put_object,
+            result.image_bytes,
+            content_type=f"image/{result.format}",
+            prefix=f"videos/{video.id}/images",
+        )
     except Exception:
+        # Either the paid image provider or the media upload can fail.
+        # In both cases a usable scene image was not delivered.
         await db.rollback()
         if charged_id:
             await credit_service.refund(db, user.id, reference_type="scene_regeneration", reference_id=charged_id)
             await db.commit()
         raise
-    storage_key, _c, _s = await asyncio.to_thread(
-        storage_service.put_object,
-        result.image_bytes,
-        content_type=f"image/{result.format}",
-        prefix=f"videos/{video.id}/images",
-    )
     from app.db.models.asset import Asset, AssetType
 
     # Recheck after the external provider call: another request may have
