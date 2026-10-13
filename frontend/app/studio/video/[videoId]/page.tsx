@@ -178,17 +178,18 @@ export default function VideoEditorPage() {
           <div className="max-h-[650px] space-y-2 overflow-y-auto">
             {scenes.map(scene => {
               const active = scene.id === selectedSceneId;
-              return <button type="button" key={scene.id} onClick={() => { setSelectedSceneId(scene.id); setPreviewMode("scene"); }}
+              return <div key={scene.id}
                 className={`flex w-full items-center gap-3 rounded-xl border p-2 text-left transition ${active
                   ? "border-violet-400/40 bg-violet-500/15"
                   : "border-transparent bg-[#111320] hover:border-white/10"}`}>
                 <SceneFrame assetId={scene.visual_asset_id} selected={active} onSelect={() => { setSelectedSceneId(scene.id); setPreviewMode("scene"); }} />
-                <span className="min-w-0 flex-1">
+                <button type="button" onClick={() => { setSelectedSceneId(scene.id); setPreviewMode("scene"); }}
+                  className="min-w-0 flex-1 text-left">
                   <span className="block text-xs font-semibold text-white">Scene {scene.sequence}</span>
                   <span className="mt-1 block text-[11px] text-[#969bb5]">{scene.duration_seconds.toFixed(1)}s</span>
                   <span className="mt-1 block truncate text-[11px] text-[#b0b4c9]">{scene.narration}</span>
-                </span>
-              </button>;
+                </button>
+              </div>;
             })}
             {!scenes.length && <p className="px-2 py-8 text-center text-xs text-[#9398b1]">
               {canEdit ? "No storyboard scenes found." : "Scenes appear when generation finishes."}

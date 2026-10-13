@@ -2,9 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
 html { scroll-behavior: smooth; }
-body { background: #0b0d16; }
+/* Creator shell uses its own dark canvas; marketing/login pages stay light. */
 ::selection { background: #6f57d5; color: #fff; }
 .studio-surface { @apply rounded-2xl border border-white/[0.08] bg-[#181a27]; }
 .studio-surface-soft { @apply rounded-2xl border border-white/[0.07] bg-[#141623]; }
