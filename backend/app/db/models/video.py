@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,6 +47,7 @@ class Video(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
     )
     error_message: Mapped[str | None] = mapped_column(String(2048))
+    needs_rerender: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     project: Mapped["Project"] = relationship(back_populates="videos")
     scripts: Mapped[list["Script"]] = relationship(back_populates="video", cascade="all, delete-orphan")

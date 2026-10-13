@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { StoryboardScene } from "@/types";
 
-function SceneCard({ videoId, scene }: { videoId: string; scene: StoryboardScene }) {
+function SceneCard({ videoId, scene, onChanged }: {
+  videoId: string; scene: StoryboardScene; onChanged: () => void;
+}) {
   const [prompt, setPrompt] = useState(scene.visual_prompt);
   const [savedPrompt, setSavedPrompt] = useState(scene.visual_prompt);
   const [assetId, setAssetId] = useState(scene.visual_asset_id);
@@ -53,7 +55,8 @@ function SceneCard({ videoId, scene }: { videoId: string; scene: StoryboardScene
         `/videos/${videoId}/storyboard/scenes/${scene.id}/regenerate`, { method: "POST" }
       );
       setAssetId(result.visual_asset_id);
-      setNotice("Storyboard image updated. The already-rendered MP4 has not changed.");
+      setNotice("New scene image saved. Use Re-render video to update the MP4.");
+      onChanged();
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Could not regenerate this image.");
     } finally { setGenerating(false); }
@@ -94,7 +97,7 @@ function SceneCard({ videoId, scene }: { videoId: string; scene: StoryboardScene
   );
 }
 
-export function StoryboardReview({ videoId }: { videoId: string }) {
+export function StoryboardReview({ videoId, onChanged }: { videoId: string; onChanged: () => void }) {
   const [scenes, setScenes] = useState<StoryboardScene[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,14 +113,14 @@ export function StoryboardReview({ videoId }: { videoId: string }) {
     <section className="mt-8" aria-label="Storyboard scenes">
       <h2 className="mb-2 text-lg font-semibold">Storyboard review</h2>
       <p className="mb-4 text-sm text-amber-800">
-        Visual prompt edits and image regeneration update the storyboard preview only.
-        The exported MP4 remains unchanged until a future re-render workflow is implemented.
+        Save visual prompts, regenerate the scene images, then use Re-render video above to export
+        a new MP4. Changing a prompt alone does not change the existing scene image or video.
       </p>
       {loading ? <p className="text-sm text-slate-500">Loading storyboard...</p>
         : error ? <p role="alert" className="text-sm text-red-700">{error}</p>
         : scenes.length === 0 ? <p className="text-sm text-slate-500">No scenes available.</p>
         : <div className="grid gap-4 md:grid-cols-2">
-            {scenes.map((scene) => <SceneCard key={scene.id} videoId={videoId} scene={scene} />)}
+            {scenes.map((scene) => <SceneCard key={scene.id} videoId={videoId} scene={scene} onChanged={onChanged} />)}
           </div>}
     </section>
   );

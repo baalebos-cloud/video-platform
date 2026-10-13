@@ -10,6 +10,7 @@ Usage:
 """
 import asyncio
 import sys
+import uuid
 
 from moto import mock_aws
 import boto3
@@ -19,6 +20,10 @@ from app.db.models.generation_job import GenerationJob, JobStatus, JobType
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.db.models.video import Video, VideoStatus
+from app.db.models.asset import Asset
+from app.db.models.scene import Scene
+from app.workers.tasks.rerender_task import rerender_video
+from sqlalchemy import select
 from app.db.session import session_scope
 from app.security.auth import hash_password
 from app.workers.tasks.pipeline_task import generation_pipeline
@@ -78,7 +83,32 @@ async def main() -> int:
             print("FAILED: output does not look like a valid MP4")
             return 1
 
-    print("SMOKE TEST PASSED: full pipeline produced a valid rendered MP4.")
+    # Re-render the persisted scene assets without recreating them.
+    original_output_id = video.output_asset_id
+    async with session_scope() as db:
+        video = await db.get(Video, video.id)
+        scenes = (await db.execute(select(Scene).where(Scene.video_id == video.id))).scalars().all()
+        assert scenes and all(s.visual_asset_id and s.audio_asset_id for s in scenes)
+        assert video.thumbnail_asset_id
+        video.needs_rerender = True
+        video.status = VideoStatus.RENDERING
+        render_job = GenerationJob(video_id=video.id, type=JobType.RENDER, status=JobStatus.QUEUED)
+        db.add(render_job)
+        await db.flush()
+        render_job_id = str(render_job.id)
+
+    await rerender_video(ctx={}, payload={"video_id": video_id, "job_id": render_job_id})
+
+    async with session_scope() as db:
+        updated_video = await db.get(Video, video.id)
+        new_job = await db.get(GenerationJob, uuid.UUID(render_job_id))
+        assert updated_video.status == VideoStatus.READY, updated_video.error_message
+        assert new_job.status == JobStatus.SUCCEEDED, new_job.error_message
+        assert updated_video.output_asset_id != original_output_id
+        assert updated_video.needs_rerender is False
+        new_asset = await db.get(Asset, updated_video.output_asset_id)
+        assert get_object_bytes(new_asset.storage_key)[4:8] == b"ftyp"
+    print("SMOKE TEST PASSED: generation and saved-asset re-render produced valid MP4 files.")
     return 0
 
 
