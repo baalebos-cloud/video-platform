@@ -10,11 +10,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.settings import get_settings
+from app.config.logging import get_logger
 from app.db.models.publishing import PublishingAccount
 from app.db.models.publishing_oauth import PublishingOAuthState
 import json
 
 PLATFORMS = ("youtube", "tiktok")
+logger = get_logger("services.publishing_oauth")
 
 def oauth_settings(platform: str) -> tuple[str, str, str]:
     s = get_settings()
@@ -54,7 +56,8 @@ async def authorize(db: AsyncSession, platform: str, user_id: uuid.UUID) -> str:
     if platform == "youtube":
         base = "https://accounts.google.com/o/oauth2/v2/auth"
         query = {"client_id":client, "redirect_uri":redirect_uri, "response_type":"code",
-                 "scope":"https://www.googleapis.com/auth/youtube.upload",
+                 "scope":("https://www.googleapis.com/auth/youtube.upload "
+                          "https://www.googleapis.com/auth/youtube.readonly"),
                  "access_type":"offline", "prompt":"consent", "state":state}
     else:
         base = "https://www.tiktok.com/v2/auth/authorize/"
@@ -83,19 +86,61 @@ async def complete_authorization(db: AsyncSession, platform: str, state: str, co
         data = {"client_key":client, "client_secret":secret, "code":code,
                 "grant_type":"authorization_code", "redirect_uri":redirect_uri}
     async with httpx.AsyncClient(timeout=20, follow_redirects=False) as http:
-        response = await http.post(url, data=data)
-        response.raise_for_status()
-        tokens = response.json()
+        try:
+            response = await http.post(url, data=data)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Do not leak Google's response, which could contain OAuth details.
+            logger.warning("publishing.oauth_token_rejected", platform=platform,
+                           provider_status=exc.response.status_code)
+            raise HTTPException(
+                502, f"{platform.title()} rejected the authorization exchange "
+                     f"(HTTP {exc.response.status_code}). Check the OAuth client "
+                     "configuration and start a fresh connection."
+            ) from None
+        except httpx.RequestError as exc:
+            logger.warning("publishing.oauth_token_unreachable", platform=platform,
+                           error_type=type(exc).__name__)
+            raise HTTPException(503, "The publishing provider could not be reached. Please retry.") from None
+        try:
+            tokens = response.json()
+        except ValueError:
+            raise HTTPException(502, "The publishing provider returned an invalid token response") from None
         access = tokens.get("access_token")
         if not access or not tokens.get("refresh_token"):
             raise HTTPException(502, "Platform did not grant durable publishing access")
         if platform == "youtube":
-            details = await http.get("https://www.googleapis.com/youtube/v3/channels",
-                params={"part":"id", "mine":"true"}, headers={"Authorization":f"Bearer {access}"})
-            details.raise_for_status()
-            items = details.json().get("items", [])
-            if not items: raise HTTPException(400, "YouTube channel not found for this account")
-            external_id = items[0]["id"]
+            try:
+                details = await http.get("https://www.googleapis.com/youtube/v3/channels",
+                    params={"part":"id", "mine":"true"}, headers={"Authorization":f"Bearer {access}"})
+                details.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.warning("publishing.youtube_channel_lookup_rejected",
+                               provider_status=exc.response.status_code)
+                if exc.response.status_code == 403:
+                    raise HTTPException(
+                        502, "Google denied YouTube channel access (403). Confirm YouTube "
+                             "Data API v3 is enabled, and reconnect with youtube.readonly "
+                             "and youtube.upload permissions."
+                    ) from None
+                raise HTTPException(
+                    502, f"YouTube channel lookup failed (HTTP {exc.response.status_code}). "
+                         "Confirm the account has an active YouTube channel."
+                ) from None
+            except httpx.RequestError as exc:
+                logger.warning("publishing.youtube_channel_unreachable",
+                               error_type=type(exc).__name__)
+                raise HTTPException(503, "Unable to reach YouTube to verify your channel.") from None
+            try:
+                items = details.json().get("items", [])
+                external_id = items[0]["id"] if items else None
+            except (ValueError, KeyError, IndexError, TypeError):
+                raise HTTPException(502, "YouTube returned invalid channel information") from None
+            if not external_id:
+                raise HTTPException(
+                    400, "No YouTube channel was found for this Google account. "
+                         "Create a YouTube channel or select the account that owns one."
+                )
         else:
             external_id = tokens.get("open_id")
             if not external_id: raise HTTPException(502, "TikTok response missing open_id")

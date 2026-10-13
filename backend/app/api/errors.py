@@ -8,6 +8,10 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.config.logging import get_logger
+
+logger = get_logger("api.errors")
+
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     return JSONResponse(
@@ -24,6 +28,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Never log query strings: OAuth callback query may contain a one-time code.
+    logger.error("api.unhandled_exception", route_path=request.url.path,
+                 error_type=type(exc).__name__)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"error_code": "internal_error", "message": "An unexpected error occurred"},
