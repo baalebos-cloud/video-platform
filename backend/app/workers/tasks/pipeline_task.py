@@ -35,7 +35,8 @@ async def _mark_stage(db, video: Video, job: GenerationJob, stage: str, progress
     video.current_stage = stage
     video.progress = progress
     job.status = JobStatus.RUNNING
-    await db.flush()
+    # Commit each stage, so clients can observe progress from other DB sessions.
+    await db.commit()
 
 
 async def generation_pipeline(ctx, payload: dict) -> None:

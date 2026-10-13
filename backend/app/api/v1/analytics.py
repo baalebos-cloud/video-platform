@@ -9,6 +9,7 @@ from app.api.deps import get_current_user
 from app.db.models.analytics import AnalyticsSnapshot
 from app.db.models.publishing import PublishedVideo
 from app.db.models.user import User
+from app.security.permissions import require_video_owner
 from app.db.session import get_db
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("")
 async def get_analytics(video_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await require_video_owner(db, video_id, user.id)
     result = await db.execute(select(PublishedVideo).where(PublishedVideo.video_id == video_id))
     published = list(result.scalars().all())
     snapshots = []

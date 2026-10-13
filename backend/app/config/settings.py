@@ -8,7 +8,7 @@ are safe-for-local-dev placeholders only.
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     app_name: str = "AI Video Creator & Monetization Platform"
     app_url: str = "http://localhost:3000"
     api_url: str = "http://localhost:8000"
-    debug: bool = True
+    debug: bool = False
 
     # --- Security ---
     jwt_secret: str = Field(default="replace_me_in_env", repr=False)
@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     # Render's/Vercel's single-line env var UI than a quoted JSON array,
     # so `cors_allowed_origins` (below) parses this instead.
     cors_allowed_origins_raw: str = "http://localhost:3000"
+
+    @model_validator(mode="after")
+    def require_secure_production_settings(self) -> "Settings":
+        if self.app_env == "production":
+            if len(self.jwt_secret) < 32 or self.jwt_secret.lower().startswith(("replace", "dev-", "test-")):
+                raise ValueError("Production JWT_SECRET must be a strong, non-placeholder value (at least 32 characters)")
+            if self.debug:
+                raise ValueError("DEBUG must be disabled in production")
+        return self
 
     @property
     def cors_allowed_origins(self) -> list[str]:

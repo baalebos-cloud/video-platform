@@ -45,6 +45,6 @@ class GenerationJob(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(String(2048))
     output_asset_ids: Mapped[list] = mapped_column(JSONB, default=list)
-    idempotency_key: Mapped[str | None] = mapped_column(String(255), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), index=True, unique=True)
 
     video: Mapped["Video"] = relationship(back_populates="jobs")

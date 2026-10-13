@@ -1,7 +1,8 @@
 """Scene/storyboard inspection and single-scene regeneration."""
+import asyncio
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,9 +44,14 @@ async def regenerate_scene(
     from app.services import storage_service, visual_service
 
     scene = await db.get(Scene, scene_id)
+    if scene is None or scene.video_id != video.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Scene not found for this video")
     result = await visual_service.generate_scene_image(prompt=scene.visual_prompt, aspect_ratio=video.aspect_ratio)
-    storage_key, _c, _s = storage_service.put_object(
-        result.image_bytes, content_type=f"image/{result.format}", prefix=f"videos/{video.id}/images"
+    storage_key, _c, _s = await asyncio.to_thread(
+        storage_service.put_object,
+        result.image_bytes,
+        content_type=f"image/{result.format}",
+        prefix=f"videos/{video.id}/images",
     )
     from app.db.models.asset import Asset, AssetType
 

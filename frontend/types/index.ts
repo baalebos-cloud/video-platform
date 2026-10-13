@@ -32,6 +32,7 @@ export interface VideoStatusResponse {
   current_stage: string | null;
   error_message?: string | null;
   estimated_remaining_seconds?: number | null;
+  output_asset_id?: string | null;
 }
 
 export interface GenerateVideoResponse {

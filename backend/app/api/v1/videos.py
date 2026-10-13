@@ -8,6 +8,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,7 +45,7 @@ class GenerateVideoRequest(BaseModel):
     platform: str = "youtube_shorts"
     visual_style: str = "cinematic_realistic"
     creativity: str = "high"
-    voice: VoicePreferences = VoicePreferences()
+    voice: VoicePreferences = Field(default_factory=VoicePreferences)
 
 
 class GenerateVideoResponse(BaseModel):
@@ -61,48 +62,75 @@ class VideoStatusResponse(BaseModel):
     current_stage: str | None
     error_message: str | None = None
     estimated_remaining_seconds: int | None = None
+    output_asset_id: uuid.UUID | None = None
 
     class Config:
         from_attributes = True
 
 
-@router.post("/generate", response_model=GenerateVideoResponse, dependencies=[Depends(generate_rate_limiter)])
+@router.post("/generate", response_model=GenerateVideoResponse)
 async def generate_video(
     payload: GenerateVideoRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(get_current_user),
+    _: None = Depends(generate_rate_limiter),
     db: AsyncSession = Depends(get_db),
 ) -> GenerateVideoResponse:
     await require_project_owner(db, payload.project_id, user.id)
     await quota_service.enforce_max_duration(payload.duration_seconds)
     await quota_service.enforce_concurrent_job_limit(db, user.id)
 
-    key = idempotency_key or hashlib.sha256(
-        f"{user.id}:{payload.model_dump_json()}".encode()
-    ).hexdigest()
+    input_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+    # A client-supplied retry key is namespaced to the user. Without a key,
+    # repeated intentional generations of the same prompt remain possible.
+    key: str | None = None
+    if idempotency_key is not None:
+        if not 1 <= len(idempotency_key.strip()) <= 128:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Idempotency-Key length")
+        key = hashlib.sha256(f"{user.id}:{idempotency_key}".encode()).hexdigest()
 
-    existing_job = await quota_service.find_existing_job_by_idempotency_key(db, key)
-    if existing_job is not None:
+    async def existing_response() -> GenerateVideoResponse | None:
+        if key is None:
+            return None
+        existing = await quota_service.find_existing_job_by_idempotency_key(db, key)
+        if existing is None:
+            return None
+        if existing.input_hash != input_hash:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Idempotency-Key was reused with a different request")
         return GenerateVideoResponse(
-            video_id=existing_job.video_id,
-            status="queued",
-            job_id=existing_job.id,
-            message="Video generation already queued for this idempotency key",
+            video_id=existing.video_id,
+            status=existing.status.value,
+            job_id=existing.id,
+            message="Existing generation returned for this idempotency key",
         )
 
-    video, job = await video_service.start_generation(
-        db,
-        project_id=payload.project_id,
-        topic=payload.topic,
-        language=payload.language,
-        locale=payload.locale,
-        duration_seconds=payload.duration_seconds,
-        platform=payload.platform,
-        visual_style=payload.visual_style,
-        creativity=payload.creativity,
-        voice_preferences=payload.voice.model_dump(),
-        idempotency_key=key,
-    )
+    previous = await existing_response()
+    if previous is not None:
+        return previous
+
+    try:
+        video, job = await video_service.start_generation(
+            db,
+            project_id=payload.project_id,
+            topic=payload.topic,
+            language=payload.language,
+            locale=payload.locale,
+            duration_seconds=payload.duration_seconds,
+            platform=payload.platform,
+            visual_style=payload.visual_style,
+            creativity=payload.creativity,
+            voice_preferences=payload.voice.model_dump(),
+            idempotency_key=key,
+            input_hash=input_hash,
+        )
+    except IntegrityError:
+        # A concurrent request may have inserted the same retry key after
+        # our initial lookup; the unique DB index resolves that race.
+        await db.rollback()
+        previous = await existing_response()
+        if previous is not None:
+            return previous
+        raise
 
     return GenerateVideoResponse(
         video_id=video.id, status="queued", job_id=job.id, message="Video generation queued"
@@ -120,6 +148,7 @@ async def get_video_status(
         progress=video.progress,
         current_stage=video.current_stage,
         error_message=video.error_message,
+        output_asset_id=video.output_asset_id,
     )
 
 
