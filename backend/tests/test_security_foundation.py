@@ -1,7 +1,7 @@
 """Regression tests for cross-tenant protection and safe generation defaults."""
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -65,7 +65,11 @@ def test_unconfigured_publishing_provider_must_not_succeed_as_mock():
 async def test_suspended_account_cannot_use_access_token():
     user = SimpleNamespace(id=uuid.uuid4(), status=UserStatus.SUSPENDED)
     db = AsyncMock()
-    db.execute.return_value.scalar_one_or_none.return_value = user
+    # AsyncSession.execute() is awaited, but SQLAlchemy's Result.scalar_one_or_none()
+    # is synchronous. An AsyncMock result incorrectly returns an unawaited coroutine.
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = user
+    db.execute.return_value = result
     request = Request({"type": "http", "headers": []})
     auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
     with patch("app.api.deps.decode_token", return_value={"type": "access", "sub": str(user.id)}):
