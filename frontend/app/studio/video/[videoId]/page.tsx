@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { CaptionPanel, timeLabel } from "@/components/studio/CaptionPanel";
 import { SceneInspector } from "@/components/studio/SceneInspector";
@@ -34,6 +34,8 @@ function SceneFrame({ assetId, selected, onSelect }: {
 
 export default function VideoEditorPage() {
   const params = useParams<{ videoId: string }>();
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
   const [video, setVideo] = useState<VideoStatusResponse | null>(null);
   const [scenes, setScenes] = useState<StoryboardScene[]>([]);
   const [captions, setCaptions] = useState<CaptionTrack | null>(null);
@@ -118,6 +120,20 @@ export default function VideoEditorPage() {
     } finally { setRerendering(false); }
   }
 
+  async function retryVideo() {
+    setRetrying(true);
+    setError(null);
+    try {
+      const outcome = await apiRequest<{video_id: string}>(
+        `/videos/${params.videoId}/retry`, {method: "POST"},
+      );
+      router.push(`/studio/video/${outcome.video_id}`);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Could not retry video.");
+      setRetrying(false);
+    }
+  }
+
   const selected = scenes.find(s => s.id === selectedSceneId) || null;
   const selectedCaption = captions?.scenes.find(s => s.scene_id === selectedSceneId);
   const { url: sceneImage } = useSignedMedia(selected?.visual_asset_id);
@@ -143,6 +159,10 @@ export default function VideoEditorPage() {
           <button type="button" onClick={() => void refreshAll()} className="studio-button-secondary">
             <StudioIcon name="refresh" size={16} /> Refresh
           </button>
+          {video?.status === "failed" && <button type="button" disabled={retrying}
+            onClick={() => void retryVideo()} className="studio-button">
+            <StudioIcon name="refresh" size={16} /> {retrying ? "Creating retry…" : "Retry as new video"}
+          </button>}
           {video?.needs_rerender && canEdit && <button type="button" disabled={rerendering}
             onClick={() => void startRerender()} className="studio-button">
             <StudioIcon name="sparkles" size={16} /> {rerendering ? "Queueing…" : "Re-render video"}

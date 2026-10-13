@@ -155,8 +155,10 @@ async def generation_pipeline(ctx, payload: dict) -> None:
         except Exception as exc:  # noqa: BLE001 — top-level pipeline guard; see docs/runbooks/
             job.status = JobStatus.FAILED
             job.error_code = "pipeline_error"
-            job.error_message = str(exc)[:2000]
+            # Never put provider exceptions (which may contain secrets or
+            # untrusted HTTP response bodies) in customer-visible responses.
+            job.error_message = "Video generation failed. You may retry from the studio."
             video.status = VideoStatus.FAILED
-            video.error_message = str(exc)[:2000]
+            video.error_message = job.error_message
             await credit_service.refund(db, project.user_id, reference_type="video_generation", reference_id=str(job.id))
-            logger.error("pipeline.failed", video_id=str(video_id), error=str(exc))
+            logger.error("pipeline.failed", video_id=str(video_id), error_type=type(exc).__name__)
