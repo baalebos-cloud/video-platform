@@ -32,12 +32,55 @@ export function CaptionPanel({ videoId, track, selectedSceneId, onSelect, onUpda
   const [styleSaving, setStyleSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState<Record<string, string>>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setText(current?.text ?? "");
     setFeedback(null);
     setError(null);
   }, [current?.scene_id, current?.text]);
+
+  useEffect(() => {
+    setBulkText(Object.fromEntries((track?.scenes || []).map(scene => [scene.scene_id, scene.text])));
+  }, [track?.scenes]);
+
+  async function saveAllCaptions() {
+    if (!track || !enabled) return;
+    setBulkSaving(true);
+    setError(null);
+    try {
+      const edits = track.scenes.filter(scene => bulkText[scene.scene_id] !== scene.text)
+        .map(scene => ({scene_id: scene.scene_id, text: bulkText[scene.scene_id] ?? ""}));
+      if (!edits.length) return;
+      await apiRequest(`/videos/${videoId}/captions/batch`, {method: "PATCH", body: {edits}});
+      await onUpdated();
+      setFeedback("All updated captions saved. Re-render to update the video.");
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Unable to save multiple captions.");
+    } finally { setBulkSaving(false); }
+  }
+
+  async function exportSrt() {
+    setExporting(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/gateway/videos/${videoId}/captions/srt`,
+        {credentials: "same-origin", cache: "no-store"});
+      if (!response.ok) throw new Error("Subtitles unavailable");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `baalebos-${videoId}.srt`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Unable to export SRT subtitles.");
+    } finally { setExporting(false); }
+  }
 
   async function saveCaption() {
     if (!current) return;
@@ -116,6 +159,37 @@ export function CaptionPanel({ videoId, track, selectedSceneId, onSelect, onUpda
         {track && !track.scenes.length && <p className="text-xs text-[#969bb5]">No subtitle scenes yet.</p>}
       </div>
     </div>
+    {track && <div className="border-t border-white/10 pt-5">
+      <h3 className="mb-2 text-sm font-semibold">Caption tools</h3>
+      <p className="mb-3 text-xs text-[#9fa4bc]">
+        Download editable subtitles or change several scene captions together.
+        Export timings are estimated from the saved audio duration.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="studio-button-secondary" disabled={exporting}
+          onClick={() => void exportSrt()}>
+          {exporting ? "Exporting…" : "Download SRT"}
+        </button>
+        <button type="button" className="studio-button-secondary"
+          disabled={!enabled} onClick={() => setBulkOpen(value => !value)}>
+          {bulkOpen ? "Close batch editor" : "Edit all captions"}
+        </button>
+      </div>
+      {bulkOpen && <div className="mt-4 space-y-3">
+        {track.scenes.map(cue => <label key={cue.scene_id} className="block text-xs text-[#b4b8cf]">
+          Scene {cue.sequence}
+          <textarea className="studio-input mt-1" rows={3} maxLength={1000}
+            value={bulkText[cue.scene_id] ?? ""} disabled={!enabled || bulkSaving}
+            onChange={event => setBulkText(prev => ({...prev,[cue.scene_id]:event.target.value}))}/>
+        </label>)}
+        <button type="button" className="studio-button"
+          disabled={!enabled || bulkSaving || !track.scenes.some(
+            scene => bulkText[scene.scene_id] !== scene.text)}
+          onClick={() => void saveAllCaptions()}>
+          {bulkSaving ? "Saving all…" : "Save changed captions"}
+        </button>
+      </div>}
+    </div>}
     {current && <div className="border-t border-white/10 pt-5">
       <label htmlFor="caption-content" className="mb-2 block text-sm font-semibold">
         Edit scene {current.sequence} captions

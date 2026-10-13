@@ -1,6 +1,7 @@
 """Owner-only caption editor: editable text per scene and safe FFmpeg style presets."""
 import uuid
 from typing import Literal
+from fastapi.responses import PlainTextResponse
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
@@ -92,3 +93,78 @@ async def edit_captions(
         await db.commit()
     return {"video_id": str(video.id), "style": video.caption_style,
             "needs_rerender": video.needs_rerender, "changed": changed}
+
+
+class BulkCaptionItem(BaseModel):
+    scene_id: uuid.UUID
+    text: str = Field(max_length=1000)
+
+
+class BulkCaptionEdit(BaseModel):
+    edits: list[BulkCaptionItem] = Field(min_length=1, max_length=100)
+
+
+@router.patch("/{video_id}/captions/batch")
+async def batch_edit_captions(
+    video_id: uuid.UUID, payload: BulkCaptionEdit,
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    video = await require_video_owner(db, video_id, user.id)
+    await db.refresh(video, with_for_update=True)
+    if video.status != VideoStatus.READY:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Captions are editable only after generation")
+    ids = [item.scene_id for item in payload.edits]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Duplicate scene IDs")
+    rows = await db.execute(select(Scene).where(Scene.id.in_(ids), Scene.video_id == video.id))
+    owned_scenes = {scene.id: scene for scene in rows.scalars().all()}
+    if set(ids) != set(owned_scenes):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Some scenes do not belong to this video")
+    changed = 0
+    for item in payload.edits:
+        scene = owned_scenes[item.scene_id]
+        sanitized = item.text.strip()
+        if scene.caption_text != sanitized:
+            scene.caption_text = sanitized
+            changed += 1
+    if changed:
+        video.needs_rerender = True
+        await db.commit()
+    return {"video_id": str(video.id), "updated": changed,
+            "needs_rerender": video.needs_rerender}
+
+
+def srt_time(seconds: float) -> str:
+    total_ms = max(0, round(seconds * 1000))
+    hours, remaining = divmod(total_ms, 3600000)
+    minutes, remaining = divmod(remaining, 60000)
+    sec, millis = divmod(remaining, 1000)
+    return f"{hours:02d}:{minutes:02d}:{sec:02d},{millis:03d}"
+
+
+def captions_as_srt(scenes: list[Scene]) -> str:
+    lines = []
+    for row in caption_rows(scenes):
+        text = " ".join((row["text"] or "").split())
+        if not text:
+            continue
+        index = len(lines) + 1
+        lines.append(
+            f'{index}\n{srt_time(row["start_seconds"])} --> {srt_time(row["end_seconds"])}\n{text}'
+        )
+    return "\n\n".join(lines) + ("\n" if lines else "")
+
+
+@router.get("/{video_id}/captions/srt")
+async def download_srt(
+    video_id: uuid.UUID, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_video_owner(db, video_id, user.id)
+    rows = await db.execute(select(Scene).where(Scene.video_id == video_id).order_by(Scene.sequence))
+    result = captions_as_srt(list(rows.scalars().all()))
+    return PlainTextResponse(
+        result, media_type="application/x-subrip; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="baalebos-{video_id}.srt"',
+                 "Cache-Control": "private, no-store"},
+    )
