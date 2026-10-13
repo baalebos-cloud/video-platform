@@ -163,3 +163,62 @@ async def test_queue_failure_refunds_reserved_credits():
     debit.assert_awaited_once()
     refund.assert_awaited_once()
     db.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scene_image_upload_failure_refunds_live_credit_charge():
+    from app.api.v1 import storyboards
+    from app.db.models.video import VideoStatus
+    user = SimpleNamespace(id=uuid.uuid4())
+    video_id = uuid.uuid4()
+    scene_id = uuid.uuid4()
+    video = SimpleNamespace(id=video_id, status=VideoStatus.READY, aspect_ratio="9:16")
+    scene = SimpleNamespace(id=scene_id, video_id=video_id, visual_prompt="A sunset view")
+    db = AsyncMock()
+    db.get.return_value = scene
+    mock_result = SimpleNamespace(image_bytes=b"image bytes", format="png", provider="openai")
+    with patch.object(storyboards, "get_settings", return_value=config(
+        openai_api_key="test", image_provider="openai",
+    )), patch.object(
+        storyboards, "require_video_owner", new_callable=AsyncMock, return_value=video,
+    ), patch.object(
+        storyboards.credit_service, "debit", new_callable=AsyncMock,
+    ) as debit, patch.object(
+        storyboards.credit_service, "refund", new_callable=AsyncMock,
+    ) as refund, patch(
+        "app.services.visual_service.generate_scene_image",
+        new_callable=AsyncMock, return_value=mock_result,
+    ), patch.object(
+        storyboards.asyncio, "to_thread", new_callable=AsyncMock,
+        side_effect=OSError("Storage failed"),
+    ):
+        with pytest.raises(OSError, match="Storage failed"):
+            await storyboards.regenerate_scene(video_id, scene_id, user=user, db=db)
+    debit.assert_awaited_once()
+    refund.assert_awaited_once()
+    assert db.commit.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_paid_voice_preview_provider_error_refunds_credits():
+    from app.api.v1 import voices
+    user = SimpleNamespace(id=uuid.uuid4())
+    db = AsyncMock()
+    with patch.object(voices, "get_settings", return_value=config(
+        openai_api_key="test", voice_provider="openai",
+    )), patch.object(
+        voices.credit_service, "debit", new_callable=AsyncMock,
+    ) as debit, patch.object(
+        voices.credit_service, "refund", new_callable=AsyncMock,
+    ) as refund, patch.object(
+        voices.voice_service, "preview_voice", new_callable=AsyncMock,
+        side_effect=MediaProviderError("provider unavailable"),
+    ):
+        with pytest.raises(MediaProviderError):
+            await voices.preview_voice(
+                voices.VoicePreviewRequest(voice_id="alloy", sample_text="Hello"),
+                user=user, db=db,
+            )
+    debit.assert_awaited_once()
+    refund.assert_awaited_once()
+    assert db.commit.await_count == 2
