@@ -78,7 +78,7 @@ def grant():
 async def test_youtube_channel_403_is_actionable_without_secret_leak():
     db=AsyncMock()
     db.scalar.return_value=grant()
-    with patch.object(oauth,"get_settings",return_value=settings()), \\
+    with patch.object(oauth,"get_settings",return_value=settings()), \
          patch.object(oauth.httpx,"AsyncClient",return_value=FakeHttp()):
         with pytest.raises(HTTPException) as info:
             await oauth.complete_authorization(db,"youtube","state-value","oauth-code")
@@ -91,7 +91,7 @@ async def test_youtube_channel_403_is_actionable_without_secret_leak():
 async def test_google_token_exchange_errors_are_masked():
     db=AsyncMock()
     db.scalar.return_value=grant()
-    with patch.object(oauth,"get_settings",return_value=settings()), \\
+    with patch.object(oauth,"get_settings",return_value=settings()), \
          patch.object(oauth.httpx,"AsyncClient",return_value=FakeHttp(token_status=400)):
         with pytest.raises(HTTPException) as info:
             await oauth.complete_authorization(db,"youtube","state-value","oauth-code")
@@ -107,7 +107,7 @@ async def test_missing_channel_returns_client_guidance():
     class EmptyChannel(FakeHttp):
         async def get(self, url, params, headers):
             return httpx.Response(200, request=httpx.Request("GET", url), json={"items":[]})
-    with patch.object(oauth,"get_settings",return_value=settings()), \\
+    with patch.object(oauth,"get_settings",return_value=settings()), \
          patch.object(oauth.httpx,"AsyncClient",return_value=EmptyChannel()):
         with pytest.raises(HTTPException) as info:
             await oauth.complete_authorization(db,"youtube","state-value","oauth-code")
