@@ -15,6 +15,8 @@ const POLL_INTERVAL_MS = 3000;
 export default function VideoProgressPage() {
   const params = useParams<{ videoId: string }>();
   const [video, setVideo] = useState<VideoStatusResponse | null>(null);
+  const [assetUrl, setAssetUrl] = useState<string | null>(null);
+  const [assetError, setAssetError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +42,19 @@ export default function VideoProgressPage() {
     };
   }, [params.videoId]);
 
+  useEffect(() => {
+    if (video?.status !== "ready" || !video.output_asset_id) return;
+    let cancelled = false;
+    apiRequest<{ signed_url: string }>(`/assets/${video.output_asset_id}`)
+      .then((asset) => {
+        if (!cancelled) setAssetUrl(asset.signed_url);
+      })
+      .catch(() => {
+        if (!cancelled) setAssetError("Unable to load the video. Refresh the page to renew its download link.");
+      });
+    return () => { cancelled = true; };
+  }, [video?.status, video?.output_asset_id]);
+
   return (
     <DashboardShell>
       <h1 className="mb-6 text-2xl font-semibold">Video generation</h1>
@@ -59,10 +74,23 @@ export default function VideoProgressPage() {
               </p>
             )}
             {video.status === "ready" && (
-              <p className="text-sm text-green-700">
-                Your video is ready. Fetch its signed download URL via the asset endpoint once the video record
-                exposes its output_asset_id to the frontend.
-              </p>
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-green-700">Your video is ready.</p>
+                {assetUrl ? (
+                  <>
+                    <video controls playsInline preload="metadata" className="w-full rounded-lg bg-black" src={assetUrl}>
+                      Your browser does not support video playback.
+                    </video>
+                    <a href={assetUrl} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex self-start rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">
+                      Open or download video
+                    </a>
+                    <p className="text-xs text-slate-500">The private media link expires after 15 minutes. Reload to renew it.</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-600">{assetError || "Preparing secure video link..."}</p>
+                )}
+              </div>
             )}
             {video.status === "failed" && (
                  <div className="flex flex-col gap-2">

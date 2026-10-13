@@ -30,7 +30,9 @@ _PROVIDERS = {"mock": MockPublishingProvider()}
 
 
 def get_publishing_provider(platform: str):
-    # Real platforms (youtube, tiktok, facebook...) register their adapter
-    # here once OAuth credentials are configured; unconfigured platforms
-    # fall back to the mock adapter so the publish flow is still testable.
-    return _PROVIDERS.get(platform, _PROVIDERS["mock"])
+    # Never claim real publishing succeeded through the mock adapter.
+    # Only the explicitly requested 'mock' platform may use this adapter.
+    provider = _PROVIDERS.get(platform)
+    if provider is None:
+        raise ValueError(f"Publishing provider is not configured: {platform}")
+    return provider

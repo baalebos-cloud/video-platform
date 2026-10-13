@@ -6,6 +6,7 @@ Flow"); the actual generation work happens in app/workers.
 """
 import uuid
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.generation_job import GenerationJob, JobStatus, JobType
@@ -26,6 +27,7 @@ async def start_generation(
     creativity: str,
     voice_preferences: dict,
     idempotency_key: str | None,
+    input_hash: str,
 ) -> tuple[Video, GenerationJob]:
     video = Video(
         project_id=project_id,
@@ -47,10 +49,24 @@ async def start_generation(
         type=JobType.VIDEO_GENERATION,
         status=JobStatus.QUEUED,
         idempotency_key=idempotency_key,
+        input_hash=input_hash,
     )
     db.add(job)
     await db.flush()
     await db.commit()
 
-    await enqueue("generation_pipeline", {"video_id": str(video.id), "job_id": str(job.id)})
+    try:
+        queue_job_id = await enqueue("generation_pipeline", {"video_id": str(video.id), "job_id": str(job.id)})
+        if not queue_job_id:
+            raise RuntimeError("Queue rejected the job")
+    except Exception:
+        # Database inserts have committed, so persist a visible failed state
+        # rather than leaving the user with an indefinitely queued job.
+        video.status = VideoStatus.FAILED
+        video.error_message = "Unable to queue generation. Please try again."
+        job.status = JobStatus.FAILED
+        job.error_code = "queue_unavailable"
+        job.error_message = video.error_message
+        await db.commit()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Generation queue unavailable")
     return video, job
