@@ -11,7 +11,12 @@ export function useAuth() {
     catch { setUser(null); }
     finally { setLoading(false); }
   }, []);
-  useEffect(() => { void loadUser(); }, [loadUser]);
+  useEffect(() => {
+    // Phase 8's browser-accessible token is no longer used by the BFF.
+    // Erase it on migration so old sessions cannot linger in localStorage.
+    window.localStorage.removeItem("ai_video_platform_access_token");
+    void loadUser();
+  }, [loadUser]);
   const login = useCallback(async(email: string, password: string) => {
     await apiRequest("/auth/login", {method:"POST",body:{email,password},auth:false});
     await loadUser();
