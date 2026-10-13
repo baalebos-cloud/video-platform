@@ -36,7 +36,7 @@ async def test_scene_regeneration_rejects_scene_from_another_video():
     db = AsyncMock()
     db.get.return_value = SimpleNamespace(id=uuid.uuid4(), video_id=uuid.uuid4())
     with patch.object(storyboards, "require_video_owner", new_callable=AsyncMock) as owner:
-        owner.return_value = SimpleNamespace(id=video_id)
+        owner.return_value = SimpleNamespace(id=video_id, status=VideoStatus.READY)
         with pytest.raises(HTTPException) as exc:
             await storyboards.regenerate_scene(video_id, uuid.uuid4(), user=user, db=db)
     assert exc.value.status_code == 404
