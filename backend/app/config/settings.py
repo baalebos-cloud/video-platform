@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     youtube_client_secret: str | None = Field(default=None, repr=False)
     tiktok_client_id: str | None = None
     tiktok_client_secret: str | None = Field(default=None, repr=False)
+    publishing_token_encryption_key: str | None = Field(default=None, repr=False)
 
     # --- Billing ---
     billing_provider: str | None = None

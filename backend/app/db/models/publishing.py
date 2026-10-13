@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin, pg_enum
@@ -24,6 +24,7 @@ class PublishingAccount(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     platform: Mapped[str] = mapped_column(String(64), nullable=False)
     external_id: Mapped[str] = mapped_column(String(255), nullable=False)
     token_ref: Mapped[str] = mapped_column(String(255), nullable=False)  # reference into secret manager, never the raw token
+    token_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     published_videos: Mapped[list["PublishedVideo"]] = relationship(back_populates="account")
 
