@@ -42,7 +42,7 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
             image_path.write_bytes(image_bytes)
             audio_path.write_bytes(audio_bytes)
 
-            render_service.render_scene_clip(image_path, audio_path, duration, clip_path)
+            render_service.render_scene_clip(image_path, audio_path, duration, clip_path, aspect_ratio=video.aspect_ratio)
             clip_paths.append(clip_path)
             all_narration.append(scene.narration)
             total_duration += duration

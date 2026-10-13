@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { apiRequest } from "@/lib/api/client";
 import type { Project } from "@/types";
+import { ProjectVideos } from "@/components/studio/ProjectVideos";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -28,12 +29,7 @@ export default function ProjectDetailPage() {
           <Button>New video</Button>
         </Link>
       </div>
-      <Card>
-        <p className="text-sm text-slate-500">
-          Videos generated for this project will appear here once the video list endpoint is wired up. In the
-          meantime, use the Studio to start a generation and track its progress on its own page.
-        </p>
-      </Card>
+      <ProjectVideos projectId={params.id} />
     </DashboardShell>
   );
 }

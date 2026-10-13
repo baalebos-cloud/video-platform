@@ -5,6 +5,7 @@ polling (8.4).
 """
 import hashlib
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -63,6 +64,12 @@ class VideoStatusResponse(BaseModel):
     error_message: str | None = None
     estimated_remaining_seconds: int | None = None
     output_asset_id: uuid.UUID | None = None
+    thumbnail_asset_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+    topic: str | None = None
+    platform: str | None = None
+    language: str | None = None
+    duration_seconds: int | None = None
 
     class Config:
         from_attributes = True
@@ -149,6 +156,12 @@ async def get_video_status(
         current_stage=video.current_stage,
         error_message=video.error_message,
         output_asset_id=video.output_asset_id,
+        thumbnail_asset_id=video.thumbnail_asset_id,
+        project_id=video.project_id,
+        topic=video.topic,
+        platform=video.platform,
+        language=video.language,
+        duration_seconds=video.duration_seconds,
     )
 
 

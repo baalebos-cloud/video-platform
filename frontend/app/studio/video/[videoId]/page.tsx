@@ -7,6 +7,8 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { apiRequest } from "@/lib/api/client";
+import { StoryboardReview } from "@/components/studio/StoryboardReview";
+import Link from "next/link";
 import type { VideoStatusResponse } from "@/types";
 
 const TERMINAL_STATUSES = new Set(["ready", "failed", "cancelled"]);
@@ -57,7 +59,17 @@ export default function VideoProgressPage() {
 
   return (
     <DashboardShell>
-      <h1 className="mb-6 text-2xl font-semibold">Video generation</h1>
+      <h1 className="mb-3 text-2xl font-semibold">{video?.topic || "Video generation"}</h1>
+      {video?.project_id && (
+        <Link href={`/dashboard/projects/${video.project_id}`} className="mb-5 inline-block text-sm font-medium text-brand-700 hover:underline">
+          Back to project
+        </Link>
+      )}
+      {video && (
+        <p className="mb-5 text-sm text-slate-500">
+          {video.platform?.replace(/_/g, " ")} · {video.language} · {video.duration_seconds}s
+        </p>
+      )}
       <Card className="max-w-xl">
         {!video ? (
           <p className="text-sm text-slate-500">Loading status...</p>
@@ -105,6 +117,7 @@ export default function VideoProgressPage() {
           </div>
         )}
       </Card>
+      {video?.status === "ready" && <StoryboardReview videoId={params.videoId} />}
     </DashboardShell>
   );
 }

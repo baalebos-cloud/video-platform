@@ -31,8 +31,13 @@ def _run(cmd: list[str]) -> None:
         raise RenderError(result.stderr[-2000:])
 
 
-def render_scene_clip(image_path: Path, audio_path: Path, duration_seconds: float, output_path: Path) -> None:
+def render_scene_clip(
+    image_path: Path, audio_path: Path, duration_seconds: float, output_path: Path, *, aspect_ratio: str = "9:16"
+) -> None:
     """Composes one scene: a static image held for `duration_seconds`, with narration audio."""
+    if aspect_ratio not in {"9:16", "16:9", "1:1"}:
+        raise RenderError("Unsupported aspect ratio")
+    width, height = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}[aspect_ratio]
     _run(
         [
             "ffmpeg", "-y",
@@ -42,7 +47,7 @@ def render_scene_clip(image_path: Path, audio_path: Path, duration_seconds: floa
             "-c:a", "aac", "-b:a", "192k",
             "-pix_fmt", "yuv420p",
             "-t", str(duration_seconds),
-            "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
             str(output_path),
         ]
     )

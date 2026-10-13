@@ -43,6 +43,9 @@ class Video(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     output_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
     )
+    thumbnail_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
+    )
     error_message: Mapped[str | None] = mapped_column(String(2048))
 
     project: Mapped["Project"] = relationship(back_populates="videos")

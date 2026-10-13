@@ -36,6 +36,7 @@ async def start_generation(
         locale=locale,
         duration_seconds=duration_seconds,
         platform=platform,
+        aspect_ratio="16:9" if platform == "youtube_landscape" else "9:16",
         visual_style=visual_style,
         creativity=creativity,
         voice_preferences=voice_preferences,
