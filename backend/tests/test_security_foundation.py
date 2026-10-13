@@ -13,6 +13,7 @@ from app.api.deps import get_current_user
 from app.api.v1 import analytics, publishing, storyboards, videos
 from app.config.settings import Settings
 from app.db.models.user import UserStatus
+from app.db.models.video import VideoStatus
 from app.services.publishing_service import get_publishing_provider
 
 
