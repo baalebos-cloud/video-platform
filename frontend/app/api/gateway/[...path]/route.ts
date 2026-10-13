@@ -21,8 +21,12 @@ function setTokens(response: NextResponse, values: {access_token: string; refres
 }
 
 function clearTokens(response: NextResponse) {
-  response.cookies.delete(ACCESS);
-  response.cookies.delete(REFRESH);
+  // __Host- cookies must keep Secure+Path=/ even when being expired.
+  for (const name of [ACCESS, REFRESH]) {
+    response.cookies.set(name, "", {
+      httpOnly: true, secure: SECURE, sameSite: "lax", path: "/", maxAge: 0,
+    });
+  }
 }
 const csrfSafe = (request: NextRequest) => {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
