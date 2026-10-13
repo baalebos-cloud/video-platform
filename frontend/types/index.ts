@@ -90,3 +90,56 @@ export interface TokenResponse {
   refresh_token: string;
   token_type: string;
 }
+
+
+export interface CreatorVideo {
+  id: string;
+  project_id: string;
+  topic: string;
+  status: VideoStatus;
+  progress: number;
+  platform: string;
+  duration_seconds: number;
+  thumbnail_asset_id: string | null;
+  created_at: string;
+}
+
+export interface CreatorOverview {
+  stats: {
+    projects: number;
+    total_videos: number;
+    ready_videos: number;
+    published_posts: number;
+    views: number;
+    likes: number;
+    shares: number;
+    comments: number;
+  };
+  projects: Array<{ id: string; name: string; niche: string | null }>;
+  recent_videos: CreatorVideo[];
+  platforms: Array<{
+    platform: string; posts: number; views: number; likes: number;
+    shares: number; comments: number;
+  }>;
+  trend: Array<{ date: string; views: number; engagement: number }>;
+  trend_description: string;
+}
+
+export type CaptionStyle = "classic" | "bold" | "social" | "minimal";
+
+export interface CaptionScene {
+  scene_id: string;
+  sequence: number;
+  text: string;
+  original_text: string;
+  start_seconds: number;
+  end_seconds: number;
+}
+
+export interface CaptionTrack {
+  video_id: string;
+  style: CaptionStyle;
+  needs_rerender: boolean;
+  scenes: CaptionScene[];
+  timing_note: string;
+}
