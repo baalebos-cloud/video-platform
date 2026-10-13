@@ -39,6 +39,7 @@ export interface VideoStatusResponse {
   platform?: string | null;
   language?: string | null;
   duration_seconds?: number | null;
+  needs_rerender?: boolean;
 }
 
 export interface ProjectVideo {
