@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/Shell";
+import { AdminSecurityOperations } from "@/components/admin/AdminSecurityOperations";
 import { StudioIcon } from "@/components/ui/StudioIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, ApiError } from "@/lib/api/client";
@@ -52,6 +53,7 @@ export default function AdministrationPage() {
   const [authPassword, setAuthPassword] = useState("");
   const [authCode, setAuthCode] = useState("");
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
+  const [auditRefreshKey, setAuditRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!user?.is_admin) return;
@@ -157,6 +159,7 @@ export default function AdministrationPage() {
         : "This request was already applied; no second adjustment was made.");
       setRequestId(null);
       setStepUpToken(null);
+      setAuditRefreshKey(value => value + 1);
     } catch (cause) {
       // The same request ID and authorization remain for a safe network retry.
       // Expired or rejected approvals must be obtained again with a new OTP.
@@ -343,6 +346,7 @@ export default function AdministrationPage() {
           </> : !usageError && <p className="text-sm text-[#9298b1]">Loading recorded outputs…</p>}
         </section>
       </div>
+      <AdminSecurityOperations mfaEnabled={mfaEnabled === true} refreshKey={auditRefreshKey} />
       {feedback && <p role="status" className="mt-6 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-300">{feedback}</p>}
       {error && <p role="alert" className="mt-6 rounded-xl bg-rose-500/10 p-4 text-sm text-rose-300">{error}</p>}
     </>}
