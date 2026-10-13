@@ -169,7 +169,7 @@ async def test_user_lookup_returns_only_requested_account():
         result = await admin.lookup_user(person.email, admin=actor, db=db)
     assert result["email"] == person.email
     assert result["balance"] == "5"
-    assert "creator@example.com" not in str(db.scalar.call_args.args[0].compile(compile_kwargs={"literal_binds": True})) or True
+    assert db.scalar.await_count == 1
 
 
 @pytest.mark.asyncio
