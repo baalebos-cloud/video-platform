@@ -13,6 +13,7 @@ from app.db.models.audit import AuditLog
 from app.db.models.admin_mfa import AdminMfaCredential
 from app.db.models.password_reset import PasswordResetToken
 from app.db.models.user_session import UserSession
+from app.db.models.publishing_oauth import PublishingOAuthState
 
 __all__ = [
     "User",
@@ -31,4 +32,5 @@ __all__ = [
     "AdminMfaCredential",
     "PasswordResetToken",
     "UserSession",
+    "PublishingOAuthState",
 ]
