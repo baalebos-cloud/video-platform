@@ -3,18 +3,19 @@ Provider selection / capability discovery.
 
 Mirrors blueprint section 18.1: selection considers task type and
 configuration rather than hard-coding one model for every request.
-Real provider adapters (OpenAI, Anthropic, Google TTS, Runway, etc.)
-register themselves here; only the mock adapters ship by default so
-the platform runs without any provider credentials.
+Optional OpenAI voice/image adapters are registered only when selected;
+the mock adapters remain the default for local development and CI.
 """
 from functools import lru_cache
 from typing import Literal
 
 from app.ai.providers.base import ImageProvider, LLMProvider, VideoProvider, VoiceProvider
 from app.ai.providers.image.mock import MockImageProvider
+from app.ai.providers.image.openai import OpenAIImageProvider
 from app.ai.providers.llm.baalebos_gateway import BaalebosGatewayLLMProvider
 from app.ai.providers.llm.mock import MockLLMProvider
 from app.ai.providers.tts.mock import MockVoiceProvider
+from app.ai.providers.tts.openai import OpenAIVoiceProvider
 from app.ai.providers.video.mock import MockVideoProvider
 from app.config.settings import get_settings
 
@@ -30,13 +31,28 @@ def _llm_registry() -> dict[str, LLMProvider]:
 
 @lru_cache
 def _voice_registry() -> dict[str, VoiceProvider]:
-    return {"mock": MockVoiceProvider()}
-    # "google": GoogleVoiceProvider(...)
+    settings = get_settings()
+    providers: dict[str, VoiceProvider] = {"mock": MockVoiceProvider()}
+    if settings.voice_provider == "openai":
+        providers["openai"] = OpenAIVoiceProvider(
+            api_key=settings.openai_api_key or "",
+            model=settings.openai_tts_model,
+            default_voice=settings.openai_tts_default_voice,
+        )
+    return providers
 
 
 @lru_cache
 def _image_registry() -> dict[str, ImageProvider]:
-    return {"mock": MockImageProvider()}
+    settings = get_settings()
+    providers: dict[str, ImageProvider] = {"mock": MockImageProvider()}
+    if settings.image_provider == "openai":
+        providers["openai"] = OpenAIImageProvider(
+            api_key=settings.openai_api_key or "",
+            model=settings.openai_image_model,
+            quality=settings.openai_image_quality,
+        )
+    return providers
 
 
 @lru_cache

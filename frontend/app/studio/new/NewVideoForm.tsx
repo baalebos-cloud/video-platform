@@ -141,6 +141,10 @@ function NewVideoForm() {
             </div>
           </div>
 
+          <p className="text-xs text-slate-600">
+            Narration may use an AI-generated voice. Clearly disclose synthetic voices
+            when sharing your video and use only content you have permission to publish.
+          </p>
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <Button type="submit" loading={submitting} className="mt-2 self-start">

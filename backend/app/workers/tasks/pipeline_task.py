@@ -12,6 +12,7 @@ import uuid
 
 from app.ai.director.director import PlanValidationError
 from app.config.logging import get_logger
+from app.config.settings import get_settings
 from app.db.models.asset import Asset, AssetType
 from app.db.models.project import Project
 from app.db.models.generation_job import GenerationJob, JobStatus
@@ -73,6 +74,7 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                 STAGE_WEIGHTS["planning"] + STAGE_WEIGHTS["scripting"] + STAGE_WEIGHTS["storyboarding"],
             )
             scene_assets: dict[str, dict] = {}
+            provider_settings = get_settings()
             for scene in scenes:
                 audio_key, duration = await voice_task.run(video, scene)
                 image_key = await visual_task.run(video, scene)
@@ -81,12 +83,22 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     type=AssetType.AUDIO,
                     storage_key=audio_key,
                     mime_type="audio/wav",
+                    provider_metadata={
+                        "provider": provider_settings.voice_provider,
+                        "model": provider_settings.openai_tts_model
+                        if provider_settings.voice_provider == "openai" else "mock",
+                    },
                 )
                 image_asset = Asset(
                     owner_id=project.user_id,
                     type=AssetType.IMAGE,
                     storage_key=image_key,
                     mime_type="image/png",
+                    provider_metadata={
+                        "provider": provider_settings.image_provider,
+                        "model": provider_settings.openai_image_model
+                        if provider_settings.image_provider == "openai" else "mock",
+                    },
                 )
                 db.add_all([audio_asset, image_asset])
                 await db.flush()

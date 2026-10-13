@@ -14,6 +14,7 @@ from app.db.models.video import Video, VideoStatus
 from app.db.session import get_db
 from app.security.permissions import require_video_owner
 from app.security.rate_limit import RateLimiter
+from app.config.settings import get_settings
 
 router = APIRouter(prefix="/videos", tags=["storyboards"])
 
@@ -102,7 +103,13 @@ async def regenerate_scene(
     await db.refresh(video, with_for_update=True)
     ensure_editable(video)
     scene = await get_owned_scene(db, video.id, scene_id)
-    asset = Asset(owner_id=user.id, type=AssetType.IMAGE, storage_key=storage_key, mime_type=f"image/{result.format}")
+    asset = Asset(
+        owner_id=user.id, type=AssetType.IMAGE, storage_key=storage_key,
+        mime_type=f"image/{result.format}",
+        provider_metadata={"provider": result.provider, "model": (
+            get_settings().openai_image_model if result.provider == "openai" else "mock"
+        )},
+    )
     db.add(asset)
     await db.flush()
     scene.visual_asset_id = asset.id
