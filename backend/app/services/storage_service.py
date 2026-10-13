@@ -59,6 +59,18 @@ def get_signed_url(storage_key: str, expires_in: timedelta = timedelta(minutes=1
     )
 
 
+def get_publishable_object_bytes(storage_key: str, max_bytes: int = 60 * 1024 * 1024) -> bytes:
+    client = _client()
+    details = client.head_object(Bucket=settings.storage_bucket, Key=storage_key)
+    if details["ContentLength"] <= 0 or details["ContentLength"] > max_bytes:
+        raise ValueError("Video file is empty or exceeds upload size limit")
+    stream = client.get_object(Bucket=settings.storage_bucket, Key=storage_key)["Body"]
+    data = stream.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError("Video file is larger than upload limit")
+    return data
+
+
 def get_object_bytes(storage_key: str) -> bytes:
     obj = _client().get_object(Bucket=settings.storage_bucket, Key=storage_key)
     return obj["Body"].read()

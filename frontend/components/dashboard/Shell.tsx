@@ -10,6 +10,7 @@ const MAIN_NAV: { href: string; label: string; icon: StudioIconName }[] = [
   { href: "/dashboard", label: "Overview", icon: "dashboard" },
   { href: "/dashboard/analytics", label: "Analytics", icon: "chart" },
   { href: "/dashboard/billing", label: "Credits & billing", icon: "wallet" },
+  { href: "/dashboard/publishing", label: "Publishing", icon: "film" },
   { href: "/dashboard/settings", label: "Settings", icon: "settings" },
 ];
 
