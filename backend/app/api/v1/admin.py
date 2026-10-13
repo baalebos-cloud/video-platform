@@ -1,10 +1,12 @@
 """Secure operator workflows: idempotent CRD adjustments and recorded usage."""
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from pydantic import EmailStr
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.audit import AuditLog
@@ -113,3 +115,55 @@ async def get_platform_usage(
     db: AsyncSession = Depends(get_db),
 ):
     return await usage_service.media_usage(db, days=days)
+
+
+
+# Explicit allowlist prevents metadata added elsewhere to audit_logs from
+# inadvertently disclosing secrets through this operator-only endpoint.
+OPERATOR_ACTIONS = (
+    "credit_adjustment", "credit_adjustment_authorized",
+    "admin_mfa_enrollment_started", "admin_mfa_enabled",
+    "admin_mfa_rotation_started", "admin_mfa_rotated",
+)
+SAFE_AUDIT_FIELDS = frozenset(("request_id", "amount", "currency", "reason", "method"))
+
+
+@router.get("/audit")
+async def get_operator_audit(
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=100),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Keyset pagination with a stable (timestamp, UUID) cursor."""
+    statement = select(AuditLog).where(AuditLog.action.in_(OPERATOR_ACTIONS))
+    if cursor is not None:
+        try:
+            raw_time, raw_id = cursor.rsplit("|", 1)
+            anchor_time, anchor_id = datetime.fromisoformat(raw_time), uuid.UUID(raw_id)
+            if anchor_time.tzinfo is None:
+                raise ValueError("Cursor timezone is required")
+        except (ValueError, TypeError):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid audit cursor") from None
+        statement = statement.where(tuple_(AuditLog.created_at, AuditLog.id) < (anchor_time, anchor_id))
+    statement = statement.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit + 1)
+    result = await db.execute(statement)
+    records = list(result.scalars().all())
+    page = records[:limit]
+    return {
+        "items": [
+            {
+                "id": str(row.id), "occurred_at": row.created_at.isoformat(),
+                "actor_id": str(row.actor_id) if row.actor_id else None,
+                "action": row.action,
+                "resource": row.resource, "resource_id": row.resource_id,
+                "details": {k: v for k, v in (row.audit_metadata or {}).items()
+                            if k in SAFE_AUDIT_FIELDS},
+            }
+            for row in page
+        ],
+        "next_cursor": (
+            f"{page[-1].created_at.isoformat()}|{page[-1].id}"
+            if len(records) > limit and page else None
+        ),
+    }
