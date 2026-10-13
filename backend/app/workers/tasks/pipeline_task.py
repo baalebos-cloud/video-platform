@@ -76,14 +76,21 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             for scene in scenes:
                 audio_key, duration = await voice_task.run(video, scene)
                 image_key = await visual_task.run(video, scene)
+                audio_asset = Asset(
+                    owner_id=project.user_id,
+                    type=AssetType.AUDIO,
+                    storage_key=audio_key,
+                    mime_type="audio/wav",
+                )
                 image_asset = Asset(
                     owner_id=project.user_id,
                     type=AssetType.IMAGE,
                     storage_key=image_key,
                     mime_type="image/png",
                 )
-                db.add(image_asset)
+                db.add_all([audio_asset, image_asset])
                 await db.flush()
+                scene.audio_asset_id = audio_asset.id
                 scene.visual_asset_id = image_asset.id
                 scene.duration_seconds = duration
                 scene_assets[str(scene.id)] = {"image_key": image_key, "audio_key": audio_key, "duration": duration}

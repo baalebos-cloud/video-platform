@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.db.models.scene import Scene
 from app.db.models.user import User
-from app.db.models.video import VideoStatus
+from app.db.models.video import Video, VideoStatus
 from app.db.session import get_db
 from app.security.permissions import require_video_owner
 from app.security.rate_limit import RateLimiter
@@ -61,6 +61,7 @@ async def update_scene_prompt(
     db: AsyncSession = Depends(get_db),
 ):
     video = await require_video_owner(db, video_id, user.id)
+    await db.execute(select(Video.id).where(Video.id == video.id).with_for_update())
     ensure_editable(video)
     scene = await get_owned_scene(db, video.id, scene_id)
     prompt = payload.visual_prompt.strip()
@@ -96,9 +97,15 @@ async def regenerate_scene(
     )
     from app.db.models.asset import Asset, AssetType
 
+    # Recheck after the external provider call: another request may have
+    # queued re-rendering while an image was being generated.
+    await db.execute(select(Video.id).where(Video.id == video.id).with_for_update())
+    ensure_editable(video)
+    scene = await get_owned_scene(db, video.id, scene_id)
     asset = Asset(owner_id=user.id, type=AssetType.IMAGE, storage_key=storage_key, mime_type=f"image/{result.format}")
     db.add(asset)
     await db.flush()
     scene.visual_asset_id = asset.id
+    video.needs_rerender = True
     await db.commit()
     return {"scene_id": str(scene.id), "visual_asset_id": str(asset.id)}

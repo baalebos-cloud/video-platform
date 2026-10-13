@@ -15,8 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.models.script import Script
+from app.db.models.scene import Scene
+from app.db.models.generation_job import GenerationJob, JobType, JobStatus
+from app.db.models.asset import Asset, AssetType
+from app.workers.queue import enqueue
 from app.db.models.user import User
-from app.db.models.video import Video
+from app.db.models.video import Video, VideoStatus
 from app.db.session import get_db
 from app.security.permissions import require_project_owner, require_video_owner
 from app.security.rate_limit import RateLimiter
@@ -70,6 +74,7 @@ class VideoStatusResponse(BaseModel):
     platform: str | None = None
     language: str | None = None
     duration_seconds: int | None = None
+    needs_rerender: bool = False
 
     class Config:
         from_attributes = True
@@ -162,6 +167,7 @@ async def get_video_status(
         platform=video.platform,
         language=video.language,
         duration_seconds=video.duration_seconds,
+        needs_rerender=video.needs_rerender,
     )
 
 
@@ -188,3 +194,64 @@ async def list_scripts(
         {"id": str(s.id), "version": s.version, "content": s.content, "status": s.status.value}
         for s in result.scalars().all()
     ]
+
+
+class RerenderResponse(BaseModel):
+    video_id: uuid.UUID
+    job_id: uuid.UUID
+    status: str
+
+
+@router.post("/{video_id}/rerender", response_model=RerenderResponse)
+async def rerender_video(
+    video_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    _: None = Depends(RateLimiter(limit=3, window_seconds=60, scope="video_rerender")),
+    db: AsyncSession = Depends(get_db),
+) -> RerenderResponse:
+    """Queue a render of persisted scene images/audio, without buying new AI assets."""
+    await require_video_owner(db, video_id, user.id)
+    await quota_service.enforce_concurrent_job_limit(db, user.id)
+
+    # Serialize against another request and storyboard mutations. Unlike a
+    # read-then-write check, this prevents two simultaneous render jobs.
+    result = await db.execute(select(Video).where(Video.id == video_id).with_for_update())
+    video = result.scalar_one()
+    if video.status != VideoStatus.READY or video.output_asset_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Video is not ready for re-rendering")
+    if not video.needs_rerender:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Regenerate a scene image before re-rendering")
+
+    result = await db.execute(select(Scene).where(Scene.video_id == video.id))
+    scenes = list(result.scalars().all())
+    if not scenes or any(s.visual_asset_id is None or s.audio_asset_id is None for s in scenes):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Some scenes have no saved images or narration. Create a new video to enable re-rendering.",
+        )
+
+    job = GenerationJob(video_id=video.id, type=JobType.RENDER, status=JobStatus.QUEUED)
+    db.add(job)
+    video.status = VideoStatus.RENDERING
+    video.progress = 85
+    video.current_stage = "rerender_queued"
+    video.error_message = None
+    await db.commit()
+    await db.refresh(job)
+
+    try:
+        queued_id = await enqueue("rerender_video", {"video_id": str(video.id), "job_id": str(job.id)})
+        if not queued_id:
+            raise RuntimeError("Queue rejected render job")
+    except Exception:
+        video.status = VideoStatus.READY
+        video.progress = 100
+        video.current_stage = "rerender_failed"
+        video.error_message = "Unable to queue re-render. Please retry."
+        job.status = JobStatus.FAILED
+        job.error_code = "queue_unavailable"
+        job.error_message = video.error_message
+        await db.commit()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Re-render queue unavailable")
+
+    return RerenderResponse(video_id=video.id, job_id=job.id, status="queued")

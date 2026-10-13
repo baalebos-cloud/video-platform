@@ -10,6 +10,7 @@ from app.config.logging import configure_logging, get_logger
 from app.config.settings import get_settings
 from app.workers.tasks.pipeline_task import generation_pipeline
 from app.workers.tasks.publish_task import publish_task
+from app.workers.tasks.rerender_task import rerender_video
 
 settings = get_settings()
 configure_logging(settings.debug)
@@ -25,7 +26,7 @@ async def shutdown(ctx):
 
 
 class WorkerSettings:
-    functions = [generation_pipeline, publish_task]
+    functions = [generation_pipeline, publish_task, rerender_video]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
