@@ -12,6 +12,8 @@ import uuid
 
 from app.ai.director.director import PlanValidationError
 from app.config.logging import get_logger
+from app.db.models.asset import Asset, AssetType
+from app.db.models.project import Project
 from app.db.models.generation_job import GenerationJob, JobStatus
 from app.db.models.video import Video, VideoStatus
 from app.db.session import session_scope
@@ -50,6 +52,11 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             logger.error("pipeline.missing_records", video_id=str(video_id), job_id=str(job_id))
             return
 
+        project = await db.get(Project, video.project_id)
+        if project is None:
+            logger.error("pipeline.missing_project", video_id=str(video_id))
+            return
+
         job.attempts += 1
         try:
             # --- 1. Plan (script + storyboard spec) ---
@@ -69,6 +76,15 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             for scene in scenes:
                 audio_key, duration = await voice_task.run(video, scene)
                 image_key = await visual_task.run(video, scene)
+                image_asset = Asset(
+                    owner_id=project.user_id,
+                    type=AssetType.IMAGE,
+                    storage_key=image_key,
+                    mime_type="image/png",
+                )
+                db.add(image_asset)
+                await db.flush()
+                scene.visual_asset_id = image_asset.id
                 scene.duration_seconds = duration
                 scene_assets[str(scene.id)] = {"image_key": image_key, "audio_key": audio_key, "duration": duration}
             await db.flush()
@@ -82,21 +98,23 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             render_result = await render_task.run(video, scenes, scene_assets)
 
             # --- 4. Register final asset ---
-            from app.db.models.asset import Asset, AssetType
-            from app.db.models.project import Project
-
-            project = await db.get(Project, video.project_id)
-
             final_asset = Asset(
                 owner_id=project.user_id,
                 type=AssetType.FINAL_VIDEO,
                 storage_key=render_result["final_video_key"],
                 mime_type="video/mp4",
             )
-            db.add(final_asset)
+            thumbnail_asset = Asset(
+                owner_id=project.user_id,
+                type=AssetType.THUMBNAIL,
+                storage_key=render_result["thumbnail_key"],
+                mime_type="image/png",
+            )
+            db.add_all([final_asset, thumbnail_asset])
             await db.flush()
 
             video.output_asset_id = final_asset.id
+            video.thumbnail_asset_id = thumbnail_asset.id
             video.status = VideoStatus.READY
             video.progress = 100
             video.current_stage = "completed"

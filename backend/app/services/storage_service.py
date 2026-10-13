@@ -20,7 +20,7 @@ from app.config.settings import get_settings
 settings = get_settings()
 
 
-def _client():
+def _client(*, public: bool = False):
     client_kwargs = dict(
         aws_access_key_id=settings.storage_access_key,
         aws_secret_access_key=settings.storage_secret_key,
@@ -34,8 +34,11 @@ def _client():
             retries={"max_attempts": 2, "mode": "standard"},
         ),
     )
-    if settings.storage_endpoint:
-        client_kwargs["endpoint_url"] = settings.storage_endpoint
+    # Internal MinIO hostname is not reachable from the user's browser.
+    # Sign media URLs for the externally reachable endpoint, when configured.
+    endpoint = settings.storage_public_base_url if public and settings.storage_public_base_url else settings.storage_endpoint
+    if endpoint:
+        client_kwargs["endpoint_url"] = endpoint
     return boto3.client("s3", **client_kwargs)
 
 
@@ -49,7 +52,7 @@ def put_object(data: bytes, *, content_type: str, prefix: str = "assets") -> tup
 
 def get_signed_url(storage_key: str, expires_in: timedelta = timedelta(minutes=15)) -> str:
     """Short-lived signed URL for private media, per the security guidelines."""
-    return _client().generate_presigned_url(
+    return _client(public=True).generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.storage_bucket, "Key": storage_key},
         ExpiresIn=int(expires_in.total_seconds()),
