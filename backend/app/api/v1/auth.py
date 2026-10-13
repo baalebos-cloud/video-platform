@@ -5,6 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
+from app.config.settings import get_settings
+from app.db.models.billing import CreditLedgerEntry, LedgerEntryType
+from app.services.credit_service import CREDIT_CURRENCY
 from app.db.session import get_db
 from app.security.auth import create_access_token, create_refresh_token, hash_password, verify_password
 
@@ -36,6 +39,18 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> 
 
     user = User(email=payload.email, password_hash=hash_password(payload.password), full_name=payload.full_name)
     db.add(user)
+    await db.flush()
+    settings = get_settings()
+    if settings.credit_enforcement_enabled and settings.signup_starter_credits:
+        db.add(CreditLedgerEntry(
+            user_id=user.id,
+            entry_type=LedgerEntryType.ADJUSTMENT,
+            amount=settings.signup_starter_credits,
+            currency=CREDIT_CURRENCY,
+            reference_type="signup",
+            reference_id=str(user.id),
+            entry_metadata={"reason": "one_time_starter_grant"},
+        ))
     await db.commit()
     await db.refresh(user)
 

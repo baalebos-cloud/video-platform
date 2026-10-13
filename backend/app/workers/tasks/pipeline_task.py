@@ -20,6 +20,7 @@ from app.db.models.video import Video, VideoStatus
 from app.db.session import session_scope
 from app.services.storage_service import put_object
 from app.workers.tasks import render_task, script_task, storyboard_task, visual_task, voice_task
+from app.services import credit_service
 
 logger = get_logger("workers.pipeline")
 
@@ -148,6 +149,7 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             job.error_message = str(exc)
             video.status = VideoStatus.FAILED
             video.error_message = str(exc)
+            await credit_service.refund(db, project.user_id, reference_type="video_generation", reference_id=str(job.id))
             logger.error("pipeline.plan_validation_failed", video_id=str(video_id), error=str(exc))
 
         except Exception as exc:  # noqa: BLE001 — top-level pipeline guard; see docs/runbooks/
@@ -156,4 +158,5 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             job.error_message = str(exc)[:2000]
             video.status = VideoStatus.FAILED
             video.error_message = str(exc)[:2000]
+            await credit_service.refund(db, project.user_id, reference_type="video_generation", reference_id=str(job.id))
             logger.error("pipeline.failed", video_id=str(video_id), error=str(exc))

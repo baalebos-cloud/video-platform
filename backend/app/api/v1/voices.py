@@ -3,6 +3,11 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.security.rate_limit import RateLimiter
+from app.config.settings import get_settings
+from app.db.session import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.services import credit_service
+import uuid
 
 from app.api.deps import get_current_user
 from app.db.models.user import User
@@ -28,10 +33,26 @@ async def preview_voice(
     payload: VoicePreviewRequest,
     user: User = Depends(get_current_user),
     _: None = Depends(RateLimiter(limit=5, window_seconds=60, scope="voice_preview")),
+    db: AsyncSession = Depends(get_db),
 ):
-    result = await voice_service.preview_voice(
-        voice_id=payload.voice_id, sample_text=payload.sample_text or "This is a preview of the selected voice."
-    )
+    settings = get_settings()
+    charged_id = str(uuid.uuid4()) if settings.voice_provider != "mock" and settings.credit_enforcement_enabled else None
+    if charged_id:
+        await credit_service.debit(
+            db, user.id, settings.voice_preview_credits, reference_type="voice_preview",
+            reference_id=charged_id,
+        )
+        await db.commit()
+    try:
+        result = await voice_service.preview_voice(
+            voice_id=payload.voice_id, sample_text=payload.sample_text or "This is a preview of the selected voice."
+        )
+    except Exception:
+        await db.rollback()
+        if charged_id:
+            await credit_service.refund(db, user.id, reference_type="voice_preview", reference_id=charged_id)
+            await db.commit()
+        raise
     import base64
 
     return {
