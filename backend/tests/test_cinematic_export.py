@@ -70,3 +70,31 @@ def test_new_video_defaults_to_clean_export():
     assert payload.caption_style == "none"
     with pytest.raises(ValidationError):
         GenerateVideoRequest(project_id=uuid.uuid4(), topic="Test", caption_style="watermark")
+
+
+def test_production_worker_rejects_mock_output_sources():
+    from types import SimpleNamespace
+    from app.ai.director.director import PlanValidationError
+    from app.workers.tasks.pipeline_task import require_live_output_providers
+
+    settings = SimpleNamespace(app_env="production", voice_provider="openai", image_provider="openai")
+    require_live_output_providers({"llm_provider": "baalebos_ai"}, settings)
+
+    with pytest.raises(PlanValidationError, match="Production media providers"):
+        require_live_output_providers({"llm_provider": "mock"}, settings)
+
+    with pytest.raises(PlanValidationError, match="Production media providers"):
+        require_live_output_providers(
+            {"llm_provider": "baalebos_ai"},
+            SimpleNamespace(app_env="production", voice_provider="mock", image_provider="openai"),
+        )
+
+
+def test_demo_environment_can_still_use_offline_mock_providers():
+    from types import SimpleNamespace
+    from app.workers.tasks.pipeline_task import require_live_output_providers
+
+    require_live_output_providers(
+        {"llm_provider": "mock"},
+        SimpleNamespace(app_env="development", voice_provider="mock", image_provider="mock"),
+    )
