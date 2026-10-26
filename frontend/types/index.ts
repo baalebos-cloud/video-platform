@@ -126,7 +126,7 @@ export interface CreatorOverview {
   trend_description: string;
 }
 
-export type CaptionStyle = "classic" | "bold" | "social" | "minimal";
+export type CaptionStyle = "none" | "classic" | "bold" | "social" | "minimal";
 
 export interface CaptionScene {
   scene_id: string;
