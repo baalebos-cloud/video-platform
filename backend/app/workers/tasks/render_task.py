@@ -43,17 +43,22 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
             image_path.write_bytes(image_bytes)
             audio_path.write_bytes(audio_bytes)
 
-            render_service.render_scene_clip(image_path, audio_path, duration, clip_path, aspect_ratio=video.aspect_ratio)
+            render_service.render_scene_clip(
+                image_path, audio_path, duration, clip_path,
+                aspect_ratio=video.aspect_ratio,
+                cinematic_motion=video.visual_style == "cinematic_realistic",
+            )
             clip_paths.append(clip_path)
             # The caption edit is scoped to its own scene; timings remain an
             # approximation of narration duration until ASR alignment ships.
             caption_text = scene.caption_text if scene.caption_text is not None else scene.narration
-            for cue in generate_captions(caption_text, duration):
-                caption_cues.append(CaptionCue(
-                    start_seconds=round(total_duration + cue.start_seconds, 2),
-                    end_seconds=round(total_duration + cue.end_seconds, 2),
-                    text=cue.text,
-                ))
+            if video.caption_style != "none":
+                for cue in generate_captions(caption_text, duration):
+                    caption_cues.append(CaptionCue(
+                        start_seconds=round(total_duration + cue.start_seconds, 2),
+                        end_seconds=round(total_duration + cue.end_seconds, 2),
+                        text=cue.text,
+                    ))
             total_duration += duration
 
         concatenated_path = tmp_path / "concatenated.mp4"
