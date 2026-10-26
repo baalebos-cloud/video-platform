@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.config.settings import get_settings
 from app.db.models.script import Script
 from app.db.models.scene import Scene
 from app.db.models.generation_job import GenerationJob, JobType, JobStatus
@@ -91,6 +92,17 @@ async def generate_video(
     _: None = Depends(generate_rate_limiter),
     db: AsyncSession = Depends(get_db),
 ) -> GenerateVideoResponse:
+    settings = get_settings()
+    if settings.app_env == "production":
+        if settings.image_provider == "mock" or settings.voice_provider == "mock" or settings.llm_provider == "mock":
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Production video generation needs real AI planning, image and voice providers; configure the Railway worker and API.",
+            )
+        if settings.llm_provider == "baalebos_ai" and not settings.llm_gateway_url:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "AI planning gateway is not configured",
+            )
     await require_project_owner(db, payload.project_id, user.id)
     input_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
     # A client-supplied retry key is namespaced to the user. Without a key,
