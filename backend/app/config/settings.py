@@ -57,13 +57,15 @@ class Settings(BaseSettings):
     storage_public_base_url: str | None = None
 
     # --- AI providers (all optional — mock adapters are used when absent) ---
-    llm_provider: str = "mock"
+    llm_provider: Literal["mock", "baalebos_ai", "gemini"] = "mock"
+    gemini_api_key: str | None = Field(default=None, repr=False)
+    gemini_model: str = "gemini-2.5-flash"
     llm_api_key: str | None = Field(default=None, repr=False)
     # Only used by the "baalebos_ai" LLM provider (a personal multi-provider
     # gateway) — the full webhook URL to POST {"prompt": "..."} to.
     llm_gateway_url: str | None = None
     
-    voice_provider: Literal["mock", "openai"] = "mock"
+    voice_provider: Literal["mock", "openai", "cloudflare"] = "mock"
     # Shared for both optional media providers. Keep server-side only.
     openai_api_key: str | None = Field(default=None, repr=False)
     openai_tts_model: str = "gpt-4o-mini-tts"
@@ -73,7 +75,14 @@ class Settings(BaseSettings):
     google_cloud_project: str | None = None
     google_application_credentials: str | None = None
 
-    image_provider: Literal["mock", "openai"] = "mock"
+    image_provider: Literal["mock", "openai", "cloudflare"] = "mock"
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = Field(default=None, repr=False)
+    cloudflare_image_model: str = "@cf/black-forest-labs/flux-1-schnell"
+    cloudflare_tts_model: str = "@cf/myshell-ai/melotts"
+    pixabay_api_key: str | None = Field(default=None, repr=False)
+    pixabay_video_api_url: str = "https://pixabay.com/api/videos/"
+    stock_footage_enabled: bool = False
     image_api_key: str | None = Field(default=None, repr=False)
 
     video_provider: str = "mock"
@@ -130,6 +139,15 @@ class Settings(BaseSettings):
             self.openai_api_key and self.openai_api_key.strip()
         ):
             raise ValueError("OPENAI_API_KEY is required when VOICE_PROVIDER or IMAGE_PROVIDER is openai")
+        if self.llm_provider == "gemini" and not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
+        if self.image_provider == "cloudflare" or self.voice_provider == "cloudflare":
+            if not self.cloudflare_account_id or not self.cloudflare_api_token:
+                raise ValueError("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required")
+        if self.stock_footage_enabled and not self.pixabay_api_key:
+            raise ValueError("PIXABAY_API_KEY is required when STOCK_FOOTAGE_ENABLED=true")
+        if self.pixabay_video_api_url != "https://pixabay.com/api/videos/":
+            raise ValueError("PIXABAY_VIDEO_API_URL must use the official Pixabay video API")
         try:
             self.admin_user_ids
         except ValueError as exc:
