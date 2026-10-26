@@ -44,6 +44,7 @@ export default function VideoEditorPage() {
   const [previewMode, setPreviewMode] = useState<"scene" | "video">("scene");
   const [pollVersion, setPollVersion] = useState(0);
   const [rerendering, setRerendering] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshVideo = useCallback(async () => {
@@ -120,6 +121,23 @@ export default function VideoEditorPage() {
     } finally { setRerendering(false); }
   }
 
+  async function downloadVideo() {
+    if (!video?.output_asset_id) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const asset = await apiRequest<{signed_url: string}>(
+        `/assets/${video.output_asset_id}?download=true`,
+      );
+      // Storage serves a short-lived MP4 URL with Content-Disposition: attachment.
+      window.location.assign(asset.signed_url);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Could not download video.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function retryVideo() {
     setRetrying(true);
     setError(null);
@@ -167,9 +185,10 @@ export default function VideoEditorPage() {
             onClick={() => void startRerender()} className="studio-button">
             <StudioIcon name="sparkles" size={16} /> {rerendering ? "Queueing…" : "Re-render video"}
           </button>}
-          {videoUrl && <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="studio-button">
-            <StudioIcon name="download" size={16} /> Open MP4
-          </a>}
+          {video?.output_asset_id && <button type="button" onClick={() => void downloadVideo()}
+            disabled={downloading} className="studio-button">
+            <StudioIcon name="download" size={16} /> {downloading ? "Preparing…" : "Download MP4"}
+          </button>}
         </div>
       </div>
 
