@@ -10,6 +10,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +52,7 @@ class GenerateVideoRequest(BaseModel):
     platform: str = "youtube_shorts"
     visual_style: str = "cinematic_realistic"
     creativity: str = "high"
+    caption_style: Literal["none", "classic", "bold", "social", "minimal"] = "none"
     voice: VoicePreferences = Field(default_factory=VoicePreferences)
 
 
@@ -132,6 +134,7 @@ async def generate_video(
             visual_style=payload.visual_style,
             creativity=payload.creativity,
             voice_preferences=payload.voice.model_dump(),
+            caption_style=payload.caption_style,
             idempotency_key=key,
             input_hash=input_hash,
         )
@@ -305,7 +308,8 @@ async def retry_failed_video(
             language=source.language, locale=source.locale,
             duration_seconds=source.duration_seconds, platform=source.platform,
             visual_style=source.visual_style, creativity=source.creativity,
-            voice_preferences=source.voice_preferences, idempotency_key=retry_key,
+            voice_preferences=source.voice_preferences, caption_style=source.caption_style,
+            idempotency_key=retry_key,
             input_hash=fingerprint,
         )
     except IntegrityError:
