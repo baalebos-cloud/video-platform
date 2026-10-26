@@ -25,6 +25,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       const data = await response.json();
       message = data.message ?? (typeof data.detail === "string" ? data.detail : message);
       errorCode = data.error_code;
+      // Surface a safe field-level validation message instead of a generic 422.
+      if (response.status === 422 && errorCode === "validation_error" && Array.isArray(data.details)) {
+        const issue = data.details.find((item: { loc?: unknown; msg?: unknown }) =>
+          Array.isArray(item.loc) && item.loc[0] === "body" && typeof item.msg === "string"
+        );
+        if (issue) {
+          const field = (issue.loc as string[]).slice(1).join(".") || "Request";
+          message = `${field}: ${issue.msg}`;
+        }
+      }
     } catch { /* non-JSON failure */ }
     throw new ApiError(response.status, message, errorCode);
   }

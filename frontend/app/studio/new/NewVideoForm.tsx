@@ -9,6 +9,7 @@ import type { GenerateVideoResponse, Voice } from "@/types";
 
 const PLATFORMS = ["youtube_shorts", "tiktok", "instagram_reels", "youtube_landscape"];
 const VISUAL_STYLES = ["cinematic_realistic", "documentary", "animated", "product"];
+const MAX_TOPIC_LENGTH = 1024;
 
 function NewVideoForm() {
   const router = useRouter();
@@ -36,6 +37,10 @@ function NewVideoForm() {
       setError("Missing project — open this page from a project's page.");
       return;
     }
+    if (topic.trim().length < 3) {
+      setError("Enter a topic of at least 3 characters.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -43,7 +48,7 @@ function NewVideoForm() {
         method: "POST",
         body: {
           project_id: projectId,
-          topic,
+          topic: topic.trim(),
           language,
           locale,
           duration_seconds: duration,
@@ -68,15 +73,19 @@ function NewVideoForm() {
       <section className="studio-surface max-w-3xl p-5 sm:p-7">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-[#e0e2f1]">Topic / idea</label>
+            <label htmlFor="video-topic" className="mb-2 block text-sm font-medium text-[#e0e2f1]">Topic / idea</label>
             <textarea
+              id="video-topic"
               required
+              minLength={3}
+              maxLength={MAX_TOPIC_LENGTH}
               rows={3}
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder="e.g. Five unbelievable ocean discoveries"
               className="studio-input"
             />
+            <p className="mt-1 text-xs text-[#959bb5]">{topic.length}/{MAX_TOPIC_LENGTH} characters. Enter a short topic rather than a full production brief.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
