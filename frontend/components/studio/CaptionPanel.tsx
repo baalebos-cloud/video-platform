@@ -6,6 +6,7 @@ import { StudioIcon } from "@/components/ui/StudioIcon";
 import type { CaptionScene, CaptionStyle, CaptionTrack } from "@/types";
 
 const STYLES: { id: CaptionStyle; name: string; description: string }[] = [
+  { id: "none", name: "Clean video", description: "No burned-in captions" },
   { id: "classic", name: "Classic", description: "Crisp & readable" },
   { id: "bold", name: "Bold", description: "High impact" },
   { id: "social", name: "Social", description: "Bright highlight" },
@@ -129,7 +130,7 @@ export function CaptionPanel({ videoId, track, selectedSceneId, onSelect, onUpda
             className={`rounded-xl border p-3 text-left transition ${track?.style === style.id
               ? "border-violet-400/70 bg-violet-400/10"
               : "border-white/10 bg-white/[0.025] hover:border-white/25"} disabled:cursor-not-allowed disabled:opacity-50`}>
-            <span className={`mb-2 block text-lg studio-caption-${style.id}`}>Aa</span>
+            <span className={`mb-2 block text-lg studio-caption-${style.id}`}>{style.id === "none" ? "×" : "Aa"}</span>
             <strong className="block text-xs text-white">{style.name}</strong>
             <small className="mt-1 block text-[10px] text-[#969bb5]">{style.description}</small>
           </button>
