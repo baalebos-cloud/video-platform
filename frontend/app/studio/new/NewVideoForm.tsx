@@ -22,6 +22,7 @@ function NewVideoForm() {
   const [duration, setDuration] = useState(60);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
   const [visualStyle, setVisualStyle] = useState(VISUAL_STYLES[0]);
+  const [captionStyle, setCaptionStyle] = useState<"none" | "classic" | "bold">("none");
   const [voiceId, setVoiceId] = useState<string | undefined>(undefined);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -54,6 +55,7 @@ function NewVideoForm() {
           duration_seconds: duration,
           platform,
           visual_style: visualStyle,
+          caption_style: captionStyle,
           voice: voiceId ? { voice_id: voiceId } : {},
         },
       });
@@ -146,6 +148,14 @@ function NewVideoForm() {
             </div>
           </div>
 
+          <label className="block text-sm font-medium">Captions on exported video
+            <select className="studio-input mt-2" value={captionStyle}
+              onChange={e => setCaptionStyle(e.target.value as "none" | "classic" | "bold")}>
+              <option value="none">No captions (clean MP4)</option>
+              <option value="classic">Classic subtitles</option>
+              <option value="bold">Bold subtitles</option>
+            </select>
+          </label>
           <p className="text-xs text-[#959bb5]">
             Narration may use an AI-generated voice. Clearly disclose synthetic voices
             when sharing your video and use only content you have permission to publish.
