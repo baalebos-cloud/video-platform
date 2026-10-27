@@ -185,3 +185,25 @@ def test_invalid_audio_trim_cannot_fake_completion():
             personal.normalize_recording(b"abc", "audio/webm", 8, trim_start=3, trim_end=3.1)
         with pytest.raises(personal.PersonalVoiceError, match="Trim range exceeds"):
             personal.normalize_recording(b"abc", "audio/webm", 8, trim_start=1, trim_end=7)
+
+
+def test_manual_and_cloned_voice_do_not_require_unused_tts_in_production():
+    from app.ai.director.director import PlanValidationError
+    from app.workers.tasks.pipeline_task import require_live_output_providers
+
+    settings = SimpleNamespace(
+        app_env="production", llm_provider="gemini",
+        image_provider="cloudflare", voice_provider="mock",
+    )
+    for mode in ("recorded", "clone"):
+        require_live_output_providers(
+            {"llm_provider": "gemini"}, settings, voice_mode=mode,
+        )
+    with pytest.raises(PlanValidationError, match="voice provider"):
+        require_live_output_providers(
+            {"llm_provider": "gemini"}, settings, voice_mode="auto",
+        )
+    with pytest.raises(PlanValidationError, match="real planning"):
+        require_live_output_providers(
+            {"llm_provider": "mock"}, settings, voice_mode="recorded",
+        )
