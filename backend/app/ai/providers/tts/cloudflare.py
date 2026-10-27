@@ -23,21 +23,23 @@ def mp3_to_wav(data: bytes) -> tuple[bytes, float]:
     try:
         result = subprocess.run(
             ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
-             "-i", "pipe:0", "-f", "wav", "-acodec", "pcm_s16le",
+             "-i", "pipe:0", "-f", "s16le", "-acodec", "pcm_s16le",
              "-ac", "1", "-ar", "24000", "pipe:1"],
             input=data, capture_output=True, timeout=60, check=True,
         )
-        out = result.stdout
-        if len(out) > 70 * 1024 * 1024:
+        pcm = result.stdout
+        if len(pcm) > 70 * 1024 * 1024:
             raise ValueError("Decoded audio too large")
-        # Pipe WAV may use a streaming length header; calculate duration from PCM output size.
-        with wave.open(io.BytesIO(out), "rb") as wav:
-            if wav.getframerate() != 24000 or wav.getsampwidth() != 2:
-                raise ValueError("Unsupported audio")
-            duration = (len(out) - 44) / (24000 * 2)
+        duration = len(pcm) / (24000 * 2)
         if not 0.1 <= duration <= 900:
             raise ValueError("Invalid narration duration")
-        return out, duration
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(24000)
+            wav.writeframes(pcm)
+        return output.getvalue(), duration
     except (subprocess.SubprocessError, OSError, wave.Error, ValueError):
         raise MediaProviderError("Could not decode Cloudflare narration") from None
 
