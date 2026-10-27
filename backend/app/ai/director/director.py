@@ -20,49 +20,102 @@ class PlanValidationError(Exception):
     """Raised when the LLM's structured output fails schema validation."""
 
 
-def normalize_video_plan_payload(raw: object) -> object:
-    """Accept known field aliases without inventing narration or visual content.
+def _spoken_text(value: object) -> str | None:
+    """Only extract actual speech text, never technical shot descriptions."""
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, dict):
+        for key in ("narration", "voiceover", "voice_over", "narration_text",
+                    "spoken_text", "dialogue", "speech", "text"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return None
 
-    Older model output used scene_number rather than sequence and sometimes
-    supplied scene narration without top-level script/hook. Re-use the
-    model-authored narration in those cases; never synthesize missing scenes.
+
+def normalize_video_plan_payload(raw: object) -> object:
+    """Normalize known Gemini variants without synthesizing original content.
+
+    Gemini can return a scene-indexed script array instead of a top-level
+    string, and older models use `scene_number` rather than `sequence`.
+    Use existing spoken text; do not substitute descriptions for narration.
     """
     if not isinstance(raw, dict):
         return raw
+
     plan = dict(raw)
     scenes = raw.get("scenes")
     if not isinstance(scenes, list):
         return plan
+
+    script_entries = raw.get("script")
+    # Only use a parallel array to fill missing narration when the array
+    # has the same number of scenes and entries have matching scene numbers
+    # when explicitly supplied. This avoids assigning speech to wrong shots.
+    script_items = script_entries if isinstance(script_entries, list) else []
+    align_script = len(script_items) == len(scenes)
     updated_scenes = []
-    for scene in scenes:
+    for index, scene in enumerate(scenes):
         if not isinstance(scene, dict):
             updated_scenes.append(scene)
             continue
         item = dict(scene)
         if "sequence" not in item and "scene_number" in item:
             item["sequence"] = item.pop("scene_number")
-        if not item.get("narration"):
-            for alias in ("voiceover", "voice_over", "narration_text"):
-                if isinstance(item.get(alias), str) and item[alias].strip():
-                    item["narration"] = item[alias]
-                    break
+
+        spoken = _spoken_text(item)
+        if not spoken and align_script:
+            entry = script_items[index]
+            if isinstance(entry, dict):
+                entry_seq = entry.get("sequence", entry.get("scene_number"))
+                try:
+                    same_scene = entry_seq is None or int(entry_seq) == int(item.get("sequence"))
+                except (ValueError, TypeError):
+                    same_scene = False
+            else:
+                same_scene = True
+            if same_scene:
+                spoken = _spoken_text(entry)
+        if spoken and not isinstance(item.get("narration"), str):
+            item["narration"] = spoken
+        elif spoken and not item.get("narration"):
+            item["narration"] = spoken
+
         if not item.get("visual_prompt"):
-            for alias in ("visual_description", "visual"):
+            for alias in ("visual_description", "visual", "visuals", "shot_description"):
                 if isinstance(item.get(alias), str) and item[alias].strip():
-                    item["visual_prompt"] = item[alias]
+                    item["visual_prompt"] = item[alias].strip()
                     break
         updated_scenes.append(item)
     plan["scenes"] = updated_scenes
+
     narrations = [
         scene["narration"].strip() for scene in updated_scenes
         if isinstance(scene, dict) and isinstance(scene.get("narration"), str)
         and scene["narration"].strip()
     ]
-    if narrations:
-        if not plan.get("script"):
+    # A script list isn't accepted by VideoPlan. Prefer complete scene
+    # narration as canonical (what the renderer actually speaks).
+    if isinstance(script_entries, list):
+        if len(narrations) == len(updated_scenes) and narrations:
             plan["script"] = " ".join(narrations)
+        else:
+            fragments = [_spoken_text(entry) for entry in script_entries]
+            if fragments and all(fragments):
+                plan["script"] = " ".join(fragments)
+            # Otherwise leave the invalid value for Pydantic to reject.
+    elif not plan.get("script") and len(narrations) == len(updated_scenes) and narrations:
+        plan["script"] = " ".join(narrations)
+
+    if not plan.get("hook"):
+        for alias in ("opening_hook", "opening_line", "intro"):
+            text = _spoken_text(plan.get(alias))
+            if text:
+                plan["hook"] = text
+                break
         if not plan.get("hook"):
-            plan["hook"] = narrations[0]
+            plan["hook"] = narrations[0] if narrations else _spoken_text(plan.get("script"))
     return plan
 
 
