@@ -17,6 +17,7 @@ from app.api.errors import http_exception_handler, unhandled_exception_handler, 
 from app.api.v1 import admin, admin_mfa, analytics, assets, auth, billing, captions, creator, jobs, projects, publishing, storyboards, users, videos, voices
 from app.config.logging import configure_logging, get_logger
 from app.config.settings import get_settings
+from app.config.release import current_release, public_release
 from app.workers.worker import WorkerSettings
 
 settings = get_settings()
@@ -31,7 +32,7 @@ _in_process_worker_task: asyncio.Task | None = None
 async def lifespan(app: FastAPI):
     global _in_process_worker, _in_process_worker_task
 
-    logger.info("app.startup", env=settings.app_env)
+    logger.info("app.startup", env=settings.app_env, **current_release())
 
     if settings.run_worker_in_process:
         # See Settings.run_worker_in_process for why this exists. Built
@@ -106,4 +107,4 @@ app.include_router(admin_mfa.router, prefix=API_PREFIX)
 @app.get("/health", tags=["ops"])
 async def health() -> dict:
     """Liveness/readiness probe target for orchestrators and load balancers."""
-    return {"status": "ok", "env": settings.app_env}
+    return {"status": "ok", "env": settings.app_env, **public_release()}
