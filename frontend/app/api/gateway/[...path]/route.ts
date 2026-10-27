@@ -41,8 +41,19 @@ async function handler(request: NextRequest, {params}: {params: {path: string[]}
     return NextResponse.json({detail: "Invalid path"}, {status: 400});
   }
   const target = `${UPSTREAM}/${path}${request.nextUrl.search}`;
-  const requestBody = ["GET", "HEAD"].includes(request.method) ? undefined : await request.text();
   const contentType = request.headers.get("content-type");
+  const isNarrationUpload = /^videos\\/[0-9a-f-]{36}\\/storyboard\\/scenes\\/[0-9a-f-]{36}\\/narration$/.test(path)
+    && request.method === "POST";
+  if (isNarrationUpload && (!contentType?.toLowerCase().startsWith("audio/")
+    || Number(request.headers.get("content-length") || "0") > 3 * 1024 * 1024)) {
+    return NextResponse.json({detail: "Voice upload must be an audio file under 3 MB"}, {status: 413});
+  }
+  // Avoid request.text() on binary WebM/MP3/WAV data. It destroys audio.
+  const requestBody = ["GET", "HEAD"].includes(request.method)
+    ? undefined : isNarrationUpload ? await request.arrayBuffer() : await request.text();
+  if (isNarrationUpload && requestBody instanceof ArrayBuffer && requestBody.byteLength > 3 * 1024 * 1024) {
+    return NextResponse.json({detail: "Voice upload exceeds 3 MB"}, {status: 413});
+  }
   const idempotency = request.headers.get("idempotency-key");
   const adminStepUp = request.headers.get("x-admin-authorization");
   const forward = (token?: string, body = requestBody, url = target, method = request.method) => {
