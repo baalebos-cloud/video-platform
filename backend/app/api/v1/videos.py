@@ -231,7 +231,7 @@ async def get_video_status(
         language=video.language,
         duration_seconds=video.duration_seconds,
         needs_rerender=video.needs_rerender,
-        voice_mode=(video.voice_preferences or {}).get("mode", "auto"),
+        voice_mode=(getattr(video, "voice_preferences", None) or {}).get("mode", "auto"),
     )
 
 
