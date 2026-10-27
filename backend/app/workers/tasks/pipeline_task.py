@@ -137,8 +137,26 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             scene_assets: dict[str, dict] = {}
             provider_settings = get_settings()
             for scene in scenes:
+                logger.info(
+                    "pipeline.scene_voice_started",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                    provider=provider_settings.voice_provider,
+                )
                 audio_key, duration = await voice_task.run(video, scene)
+                logger.info(
+                    "pipeline.scene_voice_ready",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                )
+                logger.info(
+                    "pipeline.scene_visual_started",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                )
                 visual = await visual_task.run(video, scene)
+                logger.info(
+                    "pipeline.scene_visual_ready",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                    provider=visual["provider"],
+                )
                 image_key = visual["image_key"]
                 stock_key = visual.get("video_key")
                 if stock_key:
