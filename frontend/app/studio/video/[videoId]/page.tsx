@@ -402,7 +402,13 @@ export default function VideoEditorPage() {
           </div>
           <div className="max-h-[590px] overflow-y-auto p-4">
             {inspector === "scene" ? <>
-              <SceneInspector videoId={params.videoId} scene={selected} canEdit={canEdit} onUpdated={refreshAll}/>
+              <SceneInspector videoId={params.videoId} scene={selected} canEdit={canEdit}
+                onUpdated={async () => {
+                  await refreshAll();
+                  videoRef.current?.pause();
+                  setPreviewMode("scene");
+                  setPlayhead(0);
+                }}/>
               {selected && <div className="mt-5 border-t border-white/10 pt-5">
                 <p className="studio-eyebrow mb-3">Clip order</p>
                 <div className="flex gap-2">
