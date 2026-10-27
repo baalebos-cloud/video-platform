@@ -31,8 +31,20 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
         caption_cues: list[CaptionCue] = []
         total_duration = 0.0
 
-        for scene in sorted(scenes, key=lambda s: s.sequence):
+        ordered_scenes = sorted(scenes, key=lambda s: s.sequence)
+        for index, scene in enumerate(ordered_scenes):
             assets = scene_assets[str(scene.id)]
+            # Each scene's transition_in fades from black; the preceding
+            # scene fades to black. No overlap changes clip/caption timing.
+            fade_in = index > 0 and (scene.metadata_json or {}).get(
+                "editor_transition_in"
+            ) == "fade_black"
+            fade_out = (
+                index + 1 < len(ordered_scenes)
+                and (ordered_scenes[index + 1].metadata_json or {}).get(
+                    "editor_transition_in"
+                ) == "fade_black"
+            )
             image_bytes = storage_service.get_object_bytes(assets["image_key"])
             audio_bytes = storage_service.get_object_bytes(assets["audio_key"])
             duration = assets["duration"]
@@ -49,12 +61,14 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
                 render_service.render_stock_clip(
                     video_path, audio_path, duration, clip_path,
                     aspect_ratio=video.aspect_ratio,
+                    fade_in=fade_in, fade_out=fade_out,
                 )
             else:
                 render_service.render_scene_clip(
                     image_path, audio_path, duration, clip_path,
                     aspect_ratio=video.aspect_ratio,
                     cinematic_motion=video.visual_style == "cinematic_realistic",
+                    fade_in=fade_in, fade_out=fade_out,
                 )
             clip_paths.append(clip_path)
             # The caption edit is scoped to its own scene; timings remain an
