@@ -7,7 +7,7 @@ import io
 import subprocess
 import wave
 
-MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+MAX_UPLOAD_BYTES = 3 * 1024 * 1024
 MAX_SCENE_SECONDS = 60.0
 SUPPORTED_CONTENT_TYPES = {
     "audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3",
