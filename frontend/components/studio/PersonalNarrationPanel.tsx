@@ -95,7 +95,7 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
         `/api/gateway/videos/${videoId}/storyboard/scenes/${scene.id}/narration`,
         {
           method: "POST",
-          headers: {"Content-Type": audio.type || "audio/webm"},
+          headers: {"Content-Type": audio.type || "audio/webm", "X-Voice-Consent": "confirmed"},
           body: audio,
           credentials: "same-origin",
         },
