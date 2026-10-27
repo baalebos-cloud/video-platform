@@ -49,18 +49,24 @@ async def _mark_stage(db, video: Video, job: GenerationJob, stage: str, progress
     await db.commit()
 
 
-def require_live_output_providers(plan_metadata: dict, provider_settings) -> None:
-    """Never claim a cinematic production result was produced by demo adapters."""
+def require_live_output_providers(
+    plan_metadata: dict, provider_settings, voice_mode: str = "auto",
+) -> None:
+    """Require real planning and images; voice TTS only for auto narration.
+
+    A recorded or independently licensed cloned video never calls the
+    application's normal TTS provider, so a mock TTS setting is harmless.
+    """
     if provider_settings.app_env != "production":
         return
     if (
-        provider_settings.voice_provider == "mock"
+        (voice_mode == "auto" and provider_settings.voice_provider == "mock")
         or provider_settings.image_provider == "mock"
         or plan_metadata.get("llm_provider") == "mock"
     ):
         raise PlanValidationError(
-            "Production media providers are not configured or the AI planning gateway failed. "
-            "Use real planning, image and voice providers in the Railway worker."
+            "Production media providers need real planning and image providers. "
+            "Automatic narration also needs a real TTS provider."
         )
 
 
@@ -199,7 +205,10 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             # --- 1. Plan (script + storyboard spec) ---
             await _mark_stage(db, video, job, "planning", 5)
             plan, plan_metadata = await script_task.run(video)
-            require_live_output_providers(plan_metadata, get_settings())
+            require_live_output_providers(
+                plan_metadata, get_settings(),
+                voice_mode=(video.voice_preferences or {}).get("mode", "auto"),
+            )
 
             await _mark_stage(db, video, job, "scripting", STAGE_WEIGHTS["planning"])
             await _mark_stage(db, video, job, "storyboarding", STAGE_WEIGHTS["planning"] + STAGE_WEIGHTS["scripting"])
