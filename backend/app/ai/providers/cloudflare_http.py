@@ -76,3 +76,38 @@ async def run_cloudflare_model(
     if len(response.content) > 35 * 1024 * 1024:
         raise MediaProviderError("Cloudflare AI response exceeded size limit")
     return response
+
+
+async def verify_cloudflare_access(
+    *, account_id: str, api_token: str,
+    client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient,
+) -> int:
+    """Read-only, no-inference authentication/network preflight for Workers AI.
+
+    Cloudflare's documented GET /accounts/{account_id}/ai/models/search
+    requires Workers AI Read or Write access. Never send a model inference
+    prompt during worker startup.
+    """
+    account = (account_id or "").strip()
+    token = (api_token or "").strip()
+    if not account or not token:
+        raise CloudflareRequestError("missing_credentials")
+    if not _ACCOUNT_ID.fullmatch(account):
+        raise CloudflareRequestError("invalid_account_id")
+    if not token.isascii() or any(c.isspace() for c in token) or ":" in token:
+        raise CloudflareRequestError("invalid_token_format")
+    try:
+        async with client_factory() as client:
+            response = await client.get(
+                f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/models/search",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"search": "melotts", "per_page": 1},
+                timeout=15,
+            )
+    except httpx.TimeoutException:
+        raise CloudflareRequestError("request_timeout") from None
+    except (httpx.InvalidURL, httpx.LocalProtocolError, httpx.UnsupportedProtocol):
+        raise CloudflareRequestError("invalid_client_request") from None
+    except httpx.RequestError:
+        raise CloudflareRequestError("connection_failed") from None
+    return response.status_code
