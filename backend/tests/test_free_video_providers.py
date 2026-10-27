@@ -131,7 +131,11 @@ async def test_pixabay_fetch_caches_result_24_hours(monkeypatch):
                 "videos": {"medium": {"url": "https://cdn.pixabay.com/videos/x.mp4", "size": 12000}},
             }]})
         return httpx.Response(200, content=b"x" * 12000)
-    monkeypatch.setattr(stock_footage_service.httpx, "AsyncClient", mock_client(handler))
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        stock_footage_service.httpx, "AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
     first = await stock_footage_service.find_stock_clip("futuristic city")
     second = await stock_footage_service.find_stock_clip("futuristic city")
     assert first and second and first.source_page_url.endswith("id-42/")
