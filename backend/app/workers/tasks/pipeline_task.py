@@ -174,6 +174,27 @@ async def generation_pipeline(ctx, payload: dict) -> None:
 
         job.attempts += 1
         logger.info("pipeline.worker_revision", video_id=str(video_id), **current_release())
+        reference_key = None
+        if (video.voice_preferences or {}).get("mode") == "cloned":
+            # A profile can be revoked between job queueing and execution.
+            # Verify ownership and consent again before ANY provider calls.
+            from app.api.v1.voice_profiles import is_voice_profile
+            profile_id = (video.voice_preferences or {}).get("profile_id")
+            try:
+                reference_id = uuid.UUID(str(profile_id))
+            except (TypeError, ValueError):
+                reference_id = None
+            profile = await db.get(Asset, reference_id) if reference_id else None
+            if (profile is None or profile.owner_id != project.user_id
+                    or not is_voice_profile(profile) or not get_settings().voice_clone_enabled):
+                video.status = VideoStatus.FAILED
+                video.error_message = "Personal voice profile was deleted or cloning is unavailable."
+                job.status = JobStatus.FAILED
+                job.error_code = "voice_profile_unavailable"
+                job.error_message = video.error_message
+                await db.commit()
+                return
+            reference_key = profile.storage_key
         try:
             # --- 1. Plan (script + storyboard spec) ---
             await _mark_stage(db, video, job, "planning", 5)
@@ -196,9 +217,9 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                 logger.info(
                     "pipeline.scene_voice_started",
                     video_id=str(video_id), scene_sequence=scene.sequence,
-                    provider=provider_settings.voice_provider,
+                    provider=(video.voice_preferences or {}).get("mode", provider_settings.voice_provider),
                 )
-                audio_key, voice_seconds = await voice_task.run(video, scene)
+                audio_key, voice_seconds = await voice_task.run(video, scene, **({"profile_reference_key": reference_key} if reference_key else {}))
                 duration = max(voice_seconds, runtime_floor.get(str(scene.id), 0.0))
                 logger.info(
                     "pipeline.scene_voice_ready",
@@ -229,7 +250,9 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     storage_key=audio_key,
                     mime_type="audio/wav",
                     provider_metadata={
-                        "provider": "recording_pending" if (video.voice_preferences or {}).get("mode") == "recorded" else provider_settings.voice_provider,
+                        "provider": ("recording_pending" if (video.voice_preferences or {}).get("mode") == "recorded"
+                                     else "licensed_personal_voice" if (video.voice_preferences or {}).get("mode") == "cloned"
+                                     else provider_settings.voice_provider),
                         "recording_pending": (video.voice_preferences or {}).get("mode") == "recorded",
                         "model": (
                             provider_settings.openai_tts_model

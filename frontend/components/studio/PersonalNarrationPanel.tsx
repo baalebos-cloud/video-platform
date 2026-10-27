@@ -16,8 +16,14 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const mediaStream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const activeSceneId = useRef(scene.id);
+  activeSceneId.current = scene.id;
   const [consent, setConsent] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordedSeconds, setRecordedSeconds] = useState(0);
+  const [sourceSeconds, setSourceSeconds] = useState<number | null>(null);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
   const [audio, setAudio] = useState<Blob | File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -26,11 +32,34 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
   const { url: storedVoiceUrl } = useSignedMedia(scene.audio_state === "recorded" ? scene.audio_asset_id : null);
 
   useEffect(() => {
+    if (!recording) return;
+    const started = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsed = (Date.now() - started) / 1000;
+      setRecordedSeconds(elapsed);
+      if (elapsed >= scene.duration_seconds && mediaRecorder.current?.state === "recording") {
+        mediaRecorder.current.stop();
+      }
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [recording, scene.duration_seconds]);
+
+  useEffect(() => {
     if (!audio) { setPreviewUrl(null); return; }
     const url = URL.createObjectURL(audio);
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [audio]);
+
+  useEffect(() => {
+    setAudio(null);
+    setSourceSeconds(null);
+    setTrimStart(0);
+    setTrimEnd(0);
+    setError(null);
+    setMessage(null);
+    setConsent(false);
+  }, [scene.id]);
 
   useEffect(() => {
     return () => {
@@ -56,7 +85,14 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
       mediaRecorder.current = recorder;
       chunks.current = [];
       recorder.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); };
+      const recordingSceneId = scene.id;
       recorder.onstop = () => {
+        if (activeSceneId.current !== recordingSceneId) {
+          chunks.current = [];
+          stream.getTracks().forEach(track => track.stop());
+          setRecording(false);
+          return;
+        }
         const result = new Blob(chunks.current, {type: recorder.mimeType || format || "audio/webm"});
         chunks.current = [];
         mediaStream.current?.getTracks().forEach(track => track.stop());
@@ -69,6 +105,10 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
       recorder.onerror = () => setError("Microphone recording failed. Try uploading an audio file.");
       recorder.start(250);
       setAudio(null);
+      setRecordedSeconds(0);
+      setSourceSeconds(null);
+      setTrimStart(0);
+      setTrimEnd(0);
       setRecording(true);
     } catch {
       mediaStream.current?.getTracks().forEach(track => track.stop());
@@ -87,6 +127,12 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
       setError("Audio recording must be under 3 MB.");
       return;
     }
+    if (sourceSeconds !== null && (!Number.isFinite(sourceSeconds) ||
+        trimEnd <= trimStart + 0.4 ||
+        trimEnd - trimStart > scene.duration_seconds + 0.25)) {
+      setError("Trim the recording to fit this scene before saving.");
+      return;
+    }
     setError(null);
     setMessage(null);
     setUploading(true);
@@ -95,7 +141,14 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
         `/api/gateway/videos/${videoId}/storyboard/scenes/${scene.id}/narration`,
         {
           method: "POST",
-          headers: {"Content-Type": audio.type || "audio/webm", "X-Voice-Consent": "confirmed"},
+          headers: {
+            "Content-Type": audio.type || "audio/webm",
+            "X-Voice-Consent": "confirmed",
+            ...(sourceSeconds && Number.isFinite(sourceSeconds) ? {
+              "X-Voice-Trim-Start": String(trimStart),
+              "X-Voice-Trim-End": String(trimEnd || sourceSeconds),
+            } : {}),
+          },
           body: audio,
           credentials: "same-origin",
         },
@@ -162,10 +215,43 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
           }}/>
       </label>
     </div>
-    {recording && <p role="status" className="text-xs text-amber-200">Microphone recording is active…</p>}
+    {recording && <div role="status" className="text-xs text-amber-200">
+      <div className="flex justify-between gap-3"><span>Recording microphone · {recordedSeconds.toFixed(1)}s</span>
+        <span>Limit {scene.duration_seconds.toFixed(1)}s</span></div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full bg-amber-400" style={{width: `${Math.min(100, recordedSeconds / scene.duration_seconds * 100)}%`}} />
+      </div>
+    </div>}
     {previewUrl && !recording && <>
       <label className="text-[11px] text-[#a9afc7]">Review new recording</label>
-      <audio className="h-9 w-full" controls src={previewUrl}/>
+      <audio className="h-9 w-full" controls src={previewUrl} onLoadedMetadata={event => {
+        const seconds = event.currentTarget.duration;
+        if (Number.isFinite(seconds) && seconds > 0) {
+          setSourceSeconds(seconds);
+          setTrimStart(0);
+          setTrimEnd(Math.min(seconds, scene.duration_seconds));
+        }
+      }}/>
+      {sourceSeconds !== null && <div className="space-y-2 rounded-lg border border-white/10 p-3 text-xs">
+        <p className="font-semibold text-white">Trim narration (non-destructive)</p>
+        <label className="block text-[#b6bbd2]">Start: {trimStart.toFixed(1)}s
+          <input className="w-full accent-violet-400" type="range" min={0} max={Math.max(0, sourceSeconds - 0.5)}
+            step={0.1} value={trimStart}
+            onChange={event => setTrimStart(Math.min(Number(event.target.value), trimEnd - 0.5))}/>
+        </label>
+        <label className="block text-[#b6bbd2]">End: {trimEnd.toFixed(1)}s
+          <input className="w-full accent-violet-400" type="range" min={0.5} max={sourceSeconds}
+            step={0.1} value={trimEnd}
+            onChange={event => setTrimEnd(Math.max(Number(event.target.value), trimStart + 0.5))}/>
+        </label>
+        <p className={trimEnd - trimStart > scene.duration_seconds + 0.25
+          ? "text-rose-300" : "text-emerald-300"}>
+          Selected duration: {(trimEnd - trimStart).toFixed(1)}s /
+          scene {scene.duration_seconds.toFixed(1)}s
+        </p>
+      </div>}
+      <button type="button" onClick={() => {setAudio(null);setSourceSeconds(null);}}
+        className="text-xs text-violet-300 hover:text-white">Discard and retake</button>
       <button type="button" disabled={!canEdit || !consent || uploading} onClick={() => void submitAudio()}
         className="studio-button w-full text-xs">{uploading ? "Saving…" : "Save narration for scene"}</button>
     </>}

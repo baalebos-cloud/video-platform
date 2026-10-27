@@ -35,7 +35,8 @@ generate_rate_limiter = RateLimiter(limit=10, window_seconds=60, scope="video_ge
 
 
 class VoicePreferences(BaseModel):
-    mode: Literal["auto", "recorded"] = "auto"
+    mode: Literal["auto", "recorded", "cloned"] = "auto"
+    profile_id: uuid.UUID | None = None
     provider: str | None = None
     voice_id: str | None = None
     gender: str | None = None
@@ -66,11 +67,12 @@ class GenerateVideoRequest(BaseModel):
         }
         if self.locale not in locale_options[self.language]:
             raise ValueError("Select the locale matching the chosen language")
-        if self.language != "English" and self.voice.mode != "recorded":
+        if self.language != "English" and self.voice.mode == "auto":
             raise ValueError(
-                "Yoruba and Nigerian Pidgin require your recorded narration; "
-                "the configured automatic TTS does not support these languages"
+                "Yoruba and Nigerian Pidgin require your recorded narration or a licensed personal-voice model"
             )
+        if self.voice.mode == "cloned" and not self.voice.profile_id:
+            raise ValueError("Select your enrolled personal voice profile")
         return self
 
 
@@ -121,6 +123,16 @@ async def generate_video(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "AI planning gateway is not configured",
             )
     await require_project_owner(db, payload.project_id, user.id)
+    if payload.voice.mode == "cloned":
+        from app.api.v1.voice_profiles import is_voice_profile
+        if not settings.voice_clone_enabled:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Automatic voice cloning requires licensed inference infrastructure; choose recorded narration instead",
+            )
+        enrolled = await db.get(Asset, payload.voice.profile_id)
+        if enrolled is None or enrolled.owner_id != user.id or not is_voice_profile(enrolled):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Your voice profile was not found")
     input_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
     # A client-supplied retry key is namespaced to the user. Without a key,
     # repeated intentional generations of the same prompt remain possible.
@@ -162,7 +174,7 @@ async def generate_video(
             platform=payload.platform,
             visual_style=payload.visual_style,
             creativity=payload.creativity,
-            voice_preferences=payload.voice.model_dump(),
+            voice_preferences=payload.voice.model_dump(mode="json"),
             caption_style=payload.caption_style,
             idempotency_key=key,
             input_hash=input_hash,
@@ -271,6 +283,21 @@ async def rerender_video(
 
     result = await db.execute(select(Scene).where(Scene.video_id == video.id))
     scenes = list(result.scalars().all())
+    if (getattr(video, "voice_preferences", None) or {}).get("mode") == "recorded" and scenes:
+        asset_ids = [scene.audio_asset_id for scene in scenes if scene.audio_asset_id]
+        voices = await db.execute(
+            select(Asset).where(Asset.id.in_(asset_ids), Asset.owner_id == user.id, Asset.type == AssetType.AUDIO)
+        )
+        by_id = {asset.id: asset for asset in voices.scalars().all()}
+        if any(
+            scene.audio_asset_id not in by_id
+            or (by_id[scene.audio_asset_id].provider_metadata or {}).get("provider") != "personal_recording"
+            for scene in scenes
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Finish recording every scene before re-rendering your personal-voice video",
+            )
     if not scenes or any(s.visual_asset_id is None or s.audio_asset_id is None for s in scenes):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
