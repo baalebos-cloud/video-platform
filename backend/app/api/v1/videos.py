@@ -122,10 +122,13 @@ async def generate_video(
 ) -> GenerateVideoResponse:
     settings = get_settings()
     if settings.app_env == "production":
-        if settings.image_provider == "mock" or settings.voice_provider == "mock" or settings.llm_provider == "mock":
+        needs_external_tts = payload.voice.mode == "auto"
+        if (settings.image_provider == "mock" or settings.llm_provider == "mock"
+                or (needs_external_tts and settings.voice_provider == "mock")):
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
-                "Production video generation needs real AI planning, image and voice providers; configure the Railway worker and API.",
+                "Production video generation needs real AI planning and image providers; "
+                "an automatic AI narrator also requires a live voice provider.",
             )
         if settings.llm_provider == "baalebos_ai" and not settings.llm_gateway_url:
             raise HTTPException(
