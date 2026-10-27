@@ -115,7 +115,9 @@ def normalize_video_plan_payload(raw: object) -> object:
                 plan["hook"] = text
                 break
         if not plan.get("hook"):
-            plan["hook"] = narrations[0] if narrations else _spoken_text(plan.get("script"))
+            fallback = narrations[0] if narrations else _spoken_text(plan.get("script"))
+            if fallback:
+                plan["hook"] = fallback
     return plan
 
 
