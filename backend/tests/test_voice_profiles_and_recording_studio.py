@@ -207,3 +207,53 @@ def test_manual_and_cloned_voice_do_not_require_unused_tts_in_production():
         require_live_output_providers(
             {"llm_provider": "mock"}, settings, voice_mode="recorded",
         )
+
+
+@pytest.mark.asyncio
+async def test_licensed_clone_contract_sends_approved_profile_without_releasing_token():
+    import httpx
+    owner = uuid.uuid4()
+    reference = profile(owner)
+    reference.storage_key = "private/reference.wav"
+    calls = []
+    def handler(request):
+        calls.append(request)
+        assert request.method == "POST"
+        assert request.url.host == "approved.example.org"
+        assert request.headers["Authorization"] == "Bearer server-secret"
+        payload = __import__("json").loads(request.content)
+        assert payload["language"] == "yo"
+        assert payload["text"] == "Bawo ni?"
+        assert __import__("base64").b64decode(payload["reference_wav_base64"]) == b"private-reference"
+        return httpx.Response(200, content=wav_bytes(2), headers={"Content-Type": "audio/wav"})
+
+    async def client_factory(*args, **kwargs):
+        raise AssertionError("Must be replaced by MockTransport")
+
+    original_client = httpx.AsyncClient
+    def mock_client(**kwargs):
+        return original_client(transport=httpx.MockTransport(handler))
+
+    with patch.object(clone, "configured_clone_url", return_value="https://approved.example.org/v1/synthesize"), \
+         patch.object(clone, "get_settings", return_value=SimpleNamespace(voice_clone_api_token="server-secret")), \
+         patch.object(clone.storage_service, "get_object_bytes", return_value=b"private-reference"), \
+         patch.object(clone, "normalize_recording", return_value=(wav_bytes(2), 2.0)), \
+         patch.object(clone, "claim_media_call", new_callable=AsyncMock) as quota, \
+         patch.object(clone.httpx, "AsyncClient", side_effect=mock_client):
+        output, duration = await clone.synthesize_cloned_scene("Bawo ni?", "Yoruba", reference, owner)
+    assert duration == 2
+    assert output.startswith(b"RIFF")
+    quota.assert_awaited_once_with("voice")
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_clone_never_sends_reference_for_revoked_profile():
+    item = profile(uuid.uuid4(), revoked=True)
+    with patch.object(clone, "configured_clone_url", return_value="https://approved.example.org/v1/synthesize"), \
+         patch.object(clone.storage_service, "get_object_bytes") as fetch, \
+         patch.object(clone, "claim_media_call", new_callable=AsyncMock) as quota:
+        with pytest.raises(clone.VoiceCloneUnavailable):
+            await clone.synthesize_cloned_scene("Narration", "English", item, item.owner_id)
+    fetch.assert_not_called()
+    quota.assert_not_awaited()
