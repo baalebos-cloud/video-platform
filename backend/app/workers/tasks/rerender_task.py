@@ -31,7 +31,7 @@ def make_asset_manifest(scenes: list[Scene], assets: dict[uuid.UUID, Asset], own
             or image.owner_id != owner_id or audio.owner_id != owner_id
             or image.type != AssetType.IMAGE or audio.type != AssetType.AUDIO
             or scene.duration_seconds <= 0
-            or (audio.provider_metadata or {}).get("recording_pending") is True
+            or (getattr(audio, "provider_metadata", None) or {}).get("recording_pending") is True
         ):
             raise ValueError("A storyboard scene is missing a valid saved image or narration")
         stock_key = (getattr(scene, "metadata_json", None) or {}).get("stock_footage_key")
