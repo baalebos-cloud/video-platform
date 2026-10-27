@@ -42,7 +42,7 @@ async function handler(request: NextRequest, {params}: {params: {path: string[]}
   }
   const target = `${UPSTREAM}/${path}${request.nextUrl.search}`;
   const contentType = request.headers.get("content-type");
-  const isNarrationUpload = /^videos\\/[0-9a-f-]{36}\\/storyboard\\/scenes\\/[0-9a-f-]{36}\\/narration$/.test(path)
+  const isNarrationUpload = path.startsWith("videos/") && path.includes("/storyboard/scenes/") && path.endsWith("/narration")
     && request.method === "POST";
   if (isNarrationUpload && (!contentType?.toLowerCase().startsWith("audio/")
     || Number(request.headers.get("content-length") || "0") > 3 * 1024 * 1024)) {
