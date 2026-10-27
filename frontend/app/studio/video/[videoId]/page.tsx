@@ -130,6 +130,8 @@ export default function VideoEditorPage() {
 
   const items = useMemo(() => timelineItems(scenes), [scenes]);
   const pendingNarration = scenes.filter(scene => scene.audio_state === "pending").length;
+  const recordedVoiceNeedsRender = video?.voice_mode === "recorded" && Boolean(video.needs_rerender);
+  const canExport = Boolean(video?.output_asset_id && pendingNarration === 0 && !recordedVoiceNeedsRender);
   const totalSeconds = items.at(-1)?.end ?? 0;
   const selected = scenes.find(s => s.id === selectedSceneId) ?? null;
   const selectedCaption = captions?.scenes.find(s => s.scene_id === selectedSceneId);
@@ -268,7 +270,7 @@ export default function VideoEditorPage() {
             <StudioIcon name="refresh" size={16}/> {rerendering ? "Queueing…" : "Re-render edits"}
           </button>}
           <button type="button" className="studio-button" onClick={() => setExportOpen(true)}
-            disabled={!video?.output_asset_id || pendingNarration > 0}>
+            disabled={!canExport}>
             <StudioIcon name="download" size={17}/> Export
           </button>
         </div>
@@ -281,7 +283,9 @@ export default function VideoEditorPage() {
         Select each scene, record or upload your voice, then click Re-render edits. Export is disabled until the recordings are saved.
       </p>}
       {video?.needs_rerender && <p className="mb-4 rounded-lg border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-xs text-amber-200">
-        Scene order, visuals or captions have changed. The existing MP4 is still available, but it will not include your edits until you re-render.
+        {recordedVoiceNeedsRender
+          ? "Your saved voiceovers are not yet in the MP4. Re-render before exporting."
+          : "Scene order, visuals or captions have changed. The existing MP4 is still available, but it will not include your edits until you re-render."}
       </p>}
       {video && video.status !== "ready" && <div className="studio-surface mb-4 p-4">
         <div className="mb-2 flex justify-between text-xs text-[#bbc0d4]">
@@ -462,7 +466,9 @@ export default function VideoEditorPage() {
             </div>)}
           </dl>
           {video?.needs_rerender && <p className="my-4 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-xs text-amber-200">
-            Your saved timeline changes are not yet in the existing MP4. Re-render to include them, or download the previous version.
+            {recordedVoiceNeedsRender
+              ? "Your personal narration edits must be rendered before MP4 export."
+              : "Your saved timeline changes are not yet in the existing MP4. Re-render to include them, or download the previous version."}
           </p>}
           <div className="mt-6 flex flex-wrap justify-end gap-2">
             <button type="button" onClick={() => setExportOpen(false)} className="studio-button-secondary">Cancel</button>
@@ -470,7 +476,7 @@ export default function VideoEditorPage() {
               disabled={rerendering} onClick={() => void startRerender()}>
               {rerendering ? "Queueing…" : "Re-render edits"}
             </button>}
-            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading || pendingNarration > 0}
+            <button type="button" className="studio-button" disabled={!canExport || downloading}
               onClick={() => void downloadVideo()}>
               <StudioIcon name="download" size={16}/> {downloading ? "Preparing…" : video?.needs_rerender ? "Download previous MP4" : "Download MP4"}
             </button>
