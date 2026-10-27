@@ -99,12 +99,18 @@ class Settings(BaseSettings):
         from urllib.parse import urlsplit
         if not (self.voice_clone_license_approved and self.voice_clone_endpoint and self.voice_clone_token):
             return False
+        from ipaddress import ip_address
         parsed = urlsplit(self.voice_clone_endpoint)
-        return parsed.scheme == "https" and bool(parsed.hostname) and not (
-            parsed.username or parsed.password or parsed.fragment or
-            parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0"} or
-            parsed.hostname.endswith((".internal", ".local"))
-        )
+        hostname = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or not hostname or parsed.username or parsed.password or parsed.fragment:
+            return False
+        if hostname in {"localhost", "metadata.google.internal"} or hostname.endswith((".internal", ".local")):
+            return False
+        try:
+            literal = ip_address(hostname)
+        except ValueError:
+            return True  # DNS hostname approved by operator; disable redirects in client.
+        return literal.is_global
 
     # --- Publishing ---
     youtube_client_id: str | None = None
