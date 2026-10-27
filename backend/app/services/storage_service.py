@@ -78,6 +78,11 @@ def get_publishable_object_bytes(storage_key: str, max_bytes: int = 60 * 1024 * 
     return data
 
 
+def delete_object(storage_key: str) -> None:
+    """Immediately revoke the user's saved voice-reference object."""
+    _client().delete_object(Bucket=settings.storage_bucket, Key=storage_key)
+
+
 def get_object_bytes(storage_key: str) -> bytes:
     obj = _client().get_object(Bucket=settings.storage_bucket, Key=storage_key)
     return obj["Body"].read()
