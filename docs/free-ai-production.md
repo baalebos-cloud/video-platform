@@ -7,7 +7,7 @@ This configuration uses only providers you explicitly activated. No OpenAI fallb
 ```env
 APP_ENV=production
 LLM_PROVIDER=gemini
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 GEMINI_API_KEY=<your Google AI Studio key>
 
 IMAGE_PROVIDER=cloudflare
