@@ -143,7 +143,28 @@ async def test_reference_revocation_removes_private_storage_object():
         await voice_profiles.revoke_profile(asset.id, user=SimpleNamespace(id=owner), db=db)
     assert asset.provider_metadata["revoked"] is True
     deleted.assert_called_once_with(asset.storage_key)
-    db.commit.assert_awaited_once()
+    db.delete.assert_awaited_once_with(asset)
+    assert db.commit.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_physical_deletion_is_retryable_without_restoring_clone_consent():
+    owner = uuid.uuid4()
+    asset = profile(owner)
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: asset)
+    with patch.object(voice_profiles.storage_service, "delete_object",
+                      side_effect=[OSError("Storage unavailable"), None]) as deleted:
+        with pytest.raises(HTTPException) as failure:
+            await voice_profiles.revoke_profile(asset.id, user=SimpleNamespace(id=owner), db=db)
+        assert failure.value.status_code == 503
+        assert asset.provider_metadata["revoked"] is True
+        assert not voice_profiles.is_voice_profile(asset, owner)
+        db.delete.assert_not_awaited()
+        await voice_profiles.revoke_profile(asset.id, user=SimpleNamespace(id=owner), db=db)
+    assert deleted.call_count == 2
+    db.delete.assert_awaited_once_with(asset)
+    assert db.commit.await_count == 2
 
 
 def test_trimmed_pcm_start_end_exactly_and_no_silent_padding():
