@@ -44,7 +44,7 @@ def test_long_form_director_prompt_explicitly_requests_real_narration():
         visual_style="cinematic_realistic", brand_context={}, creativity="high", cta=None,
     )
     assert PROMPT_VERSION == "video-director-v4"
-    assert "target_runtime_seconds=180" in prompt
+    assert "requested_duration_seconds=180" in prompt
     assert "narration_word_target=375" in prompt
     assert "recommended_scene_count=12" in prompt
     assert "maximum_scene_count=16" in prompt
