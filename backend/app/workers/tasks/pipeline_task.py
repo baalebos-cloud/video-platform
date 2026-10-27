@@ -198,7 +198,7 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     video_id=str(video_id), scene_sequence=scene.sequence,
                     provider=provider_settings.voice_provider,
                 )
-                audio_key, voice_seconds = await voice_task.run(video, scene)
+                audio_key, voice_seconds = await voice_task.run(video, scene, owner_id=project.user_id)
                 duration = max(voice_seconds, runtime_floor.get(str(scene.id), 0.0))
                 logger.info(
                     "pipeline.scene_voice_ready",
