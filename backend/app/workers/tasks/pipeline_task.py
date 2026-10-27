@@ -229,7 +229,8 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     storage_key=audio_key,
                     mime_type="audio/wav",
                     provider_metadata={
-                        "provider": provider_settings.voice_provider,
+                        "provider": "recording_pending" if (video.voice_preferences or {}).get("mode") == "recorded" else provider_settings.voice_provider,
+                        "recording_pending": (video.voice_preferences or {}).get("mode") == "recorded",
                         "model": (
                             provider_settings.openai_tts_model
                             if provider_settings.voice_provider == "openai"
