@@ -210,7 +210,10 @@ export default function VideoEditorPage() {
   }
 
   async function downloadVideo() {
-    if (!video?.output_asset_id) return;
+    if (!video?.output_asset_id || video.needs_rerender || pendingNarration > 0 || video.status !== "ready") {
+      setError("Render the completed narration and saved edits before downloading.");
+      return;
+    }
     setDownloading(true);
     setError(null);
     try {
