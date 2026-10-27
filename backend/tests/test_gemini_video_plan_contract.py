@@ -117,3 +117,72 @@ def test_valid_plan_needs_usable_scenes_and_consecutive_order():
             title="Video", hook="Hook", script="Text",
             scenes=[{"sequence": 2, "narration": "Speech", "visual_prompt": "Office", "duration_seconds": 3}],
         ))
+
+
+@pytest.mark.asyncio
+async def test_production_two_errors_hook_missing_and_script_list():
+    """Screenshot regression: hook missing and script is an array of scenes."""
+    original = {
+        "title": "How AI is Transforming Cities",
+        "script": [
+            {"scene_number": 1, "duration_seconds": 3, "narration": "Artificial intelligence is changing cities."},
+            {"scene_number": 2, "duration_seconds": 3, "narration": "It helps people move and work."},
+        ],
+        "scenes": [
+            {"scene_number": 1, "duration_seconds": 3, "narration": "Artificial intelligence is changing cities.",
+             "visual_prompt": "Sunrise over a real city skyline"},
+            {"scene_number": 2, "duration_seconds": 3, "narration": "It helps people move and work.",
+             "visual_prompt": "Busy city workers on a street"},
+        ],
+    }
+    normalized = normalize_video_plan_payload(original)
+    plan = VideoPlan.model_validate(normalized)
+    validate_video_plan(plan)
+    assert plan.hook == "Artificial intelligence is changing cities."
+    assert plan.script == "Artificial intelligence is changing cities. It helps people move and work."
+    assert [scene.sequence for scene in plan.scenes] == [1, 2]
+    assert isinstance(original["script"], list)
+
+
+def test_scene_narration_can_come_from_parallel_script_array():
+    raw = {
+        "title": "Narrated Footage",
+        "script": [
+            {"scene_number": 1, "voiceover": "Our cities are changing."},
+            {"scene_number": 2, "dialogue": "Technology can help."},
+        ],
+        "scenes": [
+            {"scene_number": 1, "visual_prompt": "A real crowded city", "duration_seconds": 4},
+            {"scene_number": 2, "visual_prompt": "Engineer using a computer", "duration_seconds": 4},
+        ],
+    }
+    plan = VideoPlan.model_validate(normalize_video_plan_payload(raw))
+    validate_video_plan(plan)
+    assert plan.scenes[0].narration == "Our cities are changing."
+    assert plan.scenes[1].narration == "Technology can help."
+    assert plan.script == "Our cities are changing. Technology can help."
+
+
+def test_misaligned_script_entries_must_not_produce_invented_speech():
+    raw = {
+        "title": "Mismatch",
+        "script": [{"scene_number": 22, "text": "This belongs elsewhere."}],
+        "scenes": [{"scene_number": 1, "visual_prompt": "Office interior", "duration_seconds": 5}],
+    }
+    plan = VideoPlan.model_validate(normalize_video_plan_payload(raw))
+    with pytest.raises(PlanValidationError, match="lacks narration"):
+        validate_video_plan(plan)
+    assert plan.scenes[0].narration == ""
+
+
+def test_shot_direction_is_never_mistaken_for_spoken_dialogue():
+    raw = {
+        "title": "A Scene",
+        "script": [{"transition": "Fade to black", "camera": "Fast pan"}],
+        "scenes": [{"scene_number": 1, "visual_prompt": "Clouds moving", "duration_seconds": 5}],
+    }
+    normalized = normalize_video_plan_payload(raw)
+    assert isinstance(normalized["script"], list)
+    assert normalized.get("hook") is None
+    with pytest.raises(Exception):
+        VideoPlan.model_validate(normalized)
