@@ -134,10 +134,30 @@ async def revoke_profile(
 ):
     result = await db.execute(select(Asset).where(Asset.id == profile_id).with_for_update())
     asset = result.scalar_one_or_none()
-    if not is_voice_profile(asset, user.id):
+    # A previously revoked reference must remain deletable if object-storage
+    # cleanup failed. Do not accept other users' or other kinds of assets.
+    metadata = (asset.provider_metadata or {}) if asset is not None else {}
+    if (
+        asset is None or asset.owner_id != user.id
+        or asset.type != AssetType.AUDIO
+        or metadata.get("purpose") != "voice_profile"
+        or metadata.get("consent") != "explicit"
+    ):
         raise HTTPException(404, "Voice profile not found")
-    # Invalidate access immediately, then physically remove private data.
     key = asset.storage_key
-    asset.provider_metadata = {**(asset.provider_metadata or {}), "revoked": True}
+    if metadata.get("revoked") is not True:
+        # First make it impossible to use this profile for new synthesis.
+        asset.provider_metadata = {**metadata, "revoked": True}
+        await db.commit()
+    try:
+        await asyncio.to_thread(storage_service.delete_object, key)
+    except Exception:
+        # Keep the tombstone so DELETE can be retried until physical storage
+        # removal succeeds. Never report successful deletion for an orphaned WAV.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Voice reference revoked; storage cleanup failed. Retry deletion.",
+        ) from None
+    # Delete the metadata only after deleting the private WAV.
+    await db.delete(asset)
     await db.commit()
-    await asyncio.to_thread(storage_service.delete_object, key)
