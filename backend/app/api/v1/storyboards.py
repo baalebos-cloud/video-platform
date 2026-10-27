@@ -89,6 +89,8 @@ async def upload_personal_scene_narration(
     One recording replaces one scene. This is NOT automated voice cloning.
     Re-rendering the existing storyboard includes the newly recorded audio.
     """
+    if request.headers.get("x-voice-consent") != "confirmed":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Confirm permission to use this voice recording")
     video = await require_video_owner(db, video_id, user.id)
     await db.refresh(video, with_for_update=True)
     ensure_editable(video)
