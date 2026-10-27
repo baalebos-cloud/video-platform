@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 from app.ai.director import director
-from app.ai.prompts.video_director_v2 import PROMPT_VERSION
+from app.ai.prompts.video_director_v3 import PROMPT_VERSION
 
 
 def current_release() -> dict[str, str]:
