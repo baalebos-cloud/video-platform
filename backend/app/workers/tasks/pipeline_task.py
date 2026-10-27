@@ -94,7 +94,14 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             provider_settings = get_settings()
             for scene in scenes:
                 audio_key, duration = await voice_task.run(video, scene)
-                image_key = await visual_task.run(video, scene)
+                visual = await visual_task.run(video, scene)
+                image_key = visual["image_key"]
+                stock_key = visual.get("video_key")
+                if stock_key:
+                    scene.metadata_json = {**(scene.metadata_json or {}),
+                        "stock_footage_key": stock_key,
+                        "stock_source_url": visual.get("source_url")}
+
                 audio_asset = Asset(
                     owner_id=project.user_id,
                     type=AssetType.AUDIO,
@@ -102,8 +109,12 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     mime_type="audio/wav",
                     provider_metadata={
                         "provider": provider_settings.voice_provider,
-                        "model": provider_settings.openai_tts_model
-                        if provider_settings.voice_provider == "openai" else "mock",
+                        "model": (
+                            provider_settings.openai_tts_model
+                            if provider_settings.voice_provider == "openai"
+                            else provider_settings.cloudflare_tts_model
+                            if provider_settings.voice_provider == "cloudflare" else "mock"
+                        ),
                     },
                 )
                 image_asset = Asset(
@@ -112,9 +123,14 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     storage_key=image_key,
                     mime_type="image/png",
                     provider_metadata={
-                        "provider": provider_settings.image_provider,
-                        "model": provider_settings.openai_image_model
-                        if provider_settings.image_provider == "openai" else "mock",
+                        "provider": visual["provider"],
+                        "model": (
+                            provider_settings.openai_image_model
+                            if visual["provider"] == "openai"
+                            else provider_settings.cloudflare_image_model
+                            if visual["provider"] == "cloudflare" else "stock"
+                        ),
+                        **({"source_url": visual["source_url"]} if visual.get("source_url") else {}),
                     },
                 )
                 db.add_all([audio_asset, image_asset])
@@ -122,7 +138,10 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                 scene.audio_asset_id = audio_asset.id
                 scene.visual_asset_id = image_asset.id
                 scene.duration_seconds = duration
-                scene_assets[str(scene.id)] = {"image_key": image_key, "audio_key": audio_key, "duration": duration}
+                scene_assets[str(scene.id)] = {
+                    "image_key": image_key, "audio_key": audio_key, "duration": duration,
+                    **({"video_key": stock_key} if stock_key else {}),
+                }
             await db.flush()
 
             # --- 3. Render final video ---
