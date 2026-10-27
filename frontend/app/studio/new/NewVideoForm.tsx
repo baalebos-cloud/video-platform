@@ -12,6 +12,13 @@ const VISUAL_STYLES = ["cinematic_realistic", "documentary", "animated", "produc
 const MAX_TOPIC_LENGTH = 1024;
 const DURATION_PRESETS = [30, 60, 90, 120, 180] as const;
 const MAX_DURATION_SECONDS = 180;
+const LANGUAGE_OPTIONS = [
+  { label: "English", locale: "en-NG" },
+  { label: "Nigerian Pidgin", locale: "pcm-NG" },
+  { label: "Yoruba", locale: "yo-NG" },
+] as const;
+type LanguageOption = typeof LANGUAGE_OPTIONS[number]["label"];
+type VoiceMode = "auto" | "recorded";
 
 function NewVideoForm() {
   const router = useRouter();
@@ -19,8 +26,9 @@ function NewVideoForm() {
   const projectId = searchParams.get("project_id") ?? "";
 
   const [topic, setTopic] = useState("");
-  const [language, setLanguage] = useState("English");
-  const [locale, setLocale] = useState("en-US");
+  const [language, setLanguage] = useState<LanguageOption>("English");
+  const [locale, setLocale] = useState("en-NG");
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("auto");
   const [duration, setDuration] = useState(180);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
   const [visualStyle, setVisualStyle] = useState(VISUAL_STYLES[0]);
@@ -31,8 +39,13 @@ function NewVideoForm() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (voiceMode !== "auto" || language !== "English") {
+      setVoices([]);
+      setVoiceId(undefined);
+      return;
+    }
     apiRequest<Voice[]>(`/voices?locale=${locale}`).then(setVoices).catch(() => setVoices([]));
-  }, [locale]);
+  }, [locale, language, voiceMode]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -62,7 +75,7 @@ function NewVideoForm() {
           platform,
           visual_style: visualStyle,
           caption_style: captionStyle,
-          voice: voiceId ? { voice_id: voiceId } : {},
+          voice: { mode: voiceMode, ...(voiceMode === "auto" && voiceId ? { voice_id: voiceId } : {}) },
         },
       });
       router.push(`/studio/video/${result.video_id}`);
@@ -96,9 +109,26 @@ function NewVideoForm() {
             <p className="mt-1 text-xs text-[#959bb5]">{topic.length}/{MAX_TOPIC_LENGTH} characters. Enter a short topic rather than a full production brief.</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block text-sm font-medium">Language<input className="studio-input mt-2" value={language} onChange={e => setLanguage(e.target.value)} required /></label>
-            <label className="block text-sm font-medium">Locale<input className="studio-input mt-2" value={locale} onChange={e => setLocale(e.target.value)} required /></label>
+          <div>
+            <label htmlFor="narration-language" className="mb-2 block text-sm font-medium">
+              Narration language
+            </label>
+            <select id="narration-language" className="studio-input" value={language}
+              onChange={event => {
+                const option = LANGUAGE_OPTIONS.find(o => o.label === event.target.value);
+                if (!option) return;
+                setLanguage(option.label);
+                setLocale(option.locale);
+                setVoiceMode(option.label === "English" ? "auto" : "recorded");
+                setVoiceId(undefined);
+              }}>
+              {LANGUAGE_OPTIONS.map(option =>
+                <option key={option.locale} value={option.label}>{option.label}</option>)}
+            </select>
+            <p className="mt-2 text-xs text-[#989fbb]">
+              Gemini writes the script in your chosen language. Pidgin and Yoruba
+              use recorded narration because the current AI voice cannot speak them reliably.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -157,19 +187,26 @@ function NewVideoForm() {
               </p>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#e0e2f1]">Voice</label>
-              <select
-                value={voiceId ?? ""}
-                onChange={(e) => setVoiceId(e.target.value || undefined)}
-                className="studio-input"
-              >
-                <option value="">Auto-select</option>
-                {voices.map((v) => (
-                  <option key={v.voice_id} value={v.voice_id}>
-                    {v.voice_id} ({v.gender ?? "unspecified"})
-                  </option>
-                ))}
+              <label htmlFor="narration-voice-mode" className="mb-2 block text-sm font-medium text-[#e0e2f1]">
+                Narration source
+              </label>
+              <select id="narration-voice-mode" className="studio-input" value={voiceMode}
+                onChange={event => { setVoiceMode(event.target.value as VoiceMode); setVoiceId(undefined); }}>
+                {language === "English" && <option value="auto">AI English narrator</option>}
+                <option value="recorded">My own recorded voice</option>
               </select>
+              {voiceMode === "auto" && <select aria-label="AI narrator" className="studio-input mt-2"
+                value={voiceId ?? ""} onChange={event => setVoiceId(event.target.value || undefined)}>
+                <option value="">Auto-select voice</option>
+                {voices.map(voice => <option key={voice.voice_id} value={voice.voice_id}>
+                  {voice.voice_id} ({voice.gender ?? "unspecified"})
+                </option>)}
+              </select>}
+              {voiceMode === "recorded" && <p className="mt-2 text-xs leading-relaxed text-[#a5aaca]">
+                The first render is a silent storyboard. After generation, record or upload
+                your own narration for each scene and click Re-render edits. This uses your
+                real voice, not an AI clone, and adds no TTS calls.
+              </p>}
             </div>
           </div>
 
@@ -182,8 +219,8 @@ function NewVideoForm() {
             </select>
           </label>
           <p className="text-xs text-[#959bb5]">
-            Narration may use an AI-generated voice. Clearly disclose synthetic voices
-            when sharing your video and use only content you have permission to publish.
+            Select only your own or authorized recordings. The recorded-voice option stores
+            your private audio and never clones your identity; disclose AI narration where used.
           </p>
           {error && <p className="text-sm text-rose-300">{error}</p>}
 

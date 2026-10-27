@@ -129,6 +129,7 @@ export default function VideoEditorPage() {
   }, [params.videoId, video?.status]);
 
   const items = useMemo(() => timelineItems(scenes), [scenes]);
+  const pendingNarration = scenes.filter(scene => scene.audio_state === "pending").length;
   const totalSeconds = items.at(-1)?.end ?? 0;
   const selected = scenes.find(s => s.id === selectedSceneId) ?? null;
   const selectedCaption = captions?.scenes.find(s => s.scene_id === selectedSceneId);
@@ -267,7 +268,7 @@ export default function VideoEditorPage() {
             <StudioIcon name="refresh" size={16}/> {rerendering ? "Queueing…" : "Re-render edits"}
           </button>}
           <button type="button" className="studio-button" onClick={() => setExportOpen(true)}
-            disabled={!video?.output_asset_id}>
+            disabled={!video?.output_asset_id || pendingNarration > 0}>
             <StudioIcon name="download" size={17}/> Export
           </button>
         </div>
@@ -275,6 +276,10 @@ export default function VideoEditorPage() {
 
       {error && <p role="alert" className="mb-4 rounded-lg border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-300">{error}</p>}
       {feedback && <p role="status" className="mb-4 rounded-lg border border-teal-400/20 bg-teal-500/10 p-3 text-sm text-teal-200">{feedback}</p>}
+      {pendingNarration > 0 && <p role="status" className="mb-4 rounded-lg border border-violet-400/20 bg-violet-500/10 px-4 py-3 text-xs text-violet-100">
+        Your recorded-voice video has {pendingNarration} scene{pendingNarration === 1 ? "" : "s"} still awaiting narration.
+        Select each scene, record or upload your voice, then click Re-render edits. Export is disabled until the recordings are saved.
+      </p>}
       {video?.needs_rerender && <p className="mb-4 rounded-lg border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-xs text-amber-200">
         Scene order, visuals or captions have changed. The existing MP4 is still available, but it will not include your edits until you re-render.
       </p>}
@@ -465,7 +470,7 @@ export default function VideoEditorPage() {
               disabled={rerendering} onClick={() => void startRerender()}>
               {rerendering ? "Queueing…" : "Re-render edits"}
             </button>}
-            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading}
+            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading || pendingNarration > 0}
               onClick={() => void downloadVideo()}>
               <StudioIcon name="download" size={16}/> {downloading ? "Preparing…" : video?.needs_rerender ? "Download previous MP4" : "Download MP4"}
             </button>

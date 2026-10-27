@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
@@ -35,6 +35,7 @@ generate_rate_limiter = RateLimiter(limit=10, window_seconds=60, scope="video_ge
 
 
 class VoicePreferences(BaseModel):
+    mode: Literal["auto", "recorded"] = "auto"
     provider: str | None = None
     voice_id: str | None = None
     gender: str | None = None
@@ -47,7 +48,7 @@ class VoicePreferences(BaseModel):
 class GenerateVideoRequest(BaseModel):
     project_id: uuid.UUID
     topic: str = Field(min_length=3, max_length=1024)
-    language: str = "English"
+    language: Literal["English", "Nigerian Pidgin", "Yoruba"] = "English"
     locale: str = "en-US"
     duration_seconds: int = Field(default=60, ge=5, le=180)
     platform: str = "youtube_shorts"
@@ -55,6 +56,22 @@ class GenerateVideoRequest(BaseModel):
     creativity: str = "high"
     caption_style: Literal["none", "classic", "bold", "social", "minimal"] = "none"
     voice: VoicePreferences = Field(default_factory=VoicePreferences)
+
+    @model_validator(mode="after")
+    def ensure_supported_narration(self):
+        locale_options = {
+            "English": {"en-US", "en-NG", "en-GB"},
+            "Nigerian Pidgin": {"pcm-NG"},
+            "Yoruba": {"yo-NG"},
+        }
+        if self.locale not in locale_options[self.language]:
+            raise ValueError("Select the locale matching the chosen language")
+        if self.language != "English" and self.voice.mode != "recorded":
+            raise ValueError(
+                "Yoruba and Nigerian Pidgin require your recorded narration; "
+                "the configured automatic TTS does not support these languages"
+            )
+        return self
 
 
 class GenerateVideoResponse(BaseModel):
