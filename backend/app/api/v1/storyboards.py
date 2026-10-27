@@ -107,10 +107,17 @@ async def upload_personal_scene_narration(
     if scene is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Scene not found for this video")
     try:
+        trim_start = float(request.headers.get("x-trim-start", "0"))
+        trim_end_raw = request.headers.get("x-trim-end")
+        trim_end = float(trim_end_raw) if trim_end_raw else None
+        if not math.isfinite(trim_start) or (trim_end is not None and not math.isfinite(trim_end)):
+            raise PersonalVoiceError("Trim points must be finite")
         wav_bytes, seconds = await asyncio.to_thread(
             normalize_recording, raw, request.headers.get("content-type", ""),
-            float(scene.duration_seconds),
+            float(scene.duration_seconds), trim_start=trim_start, trim_end=trim_end,
         )
+    except (PersonalVoiceError, ValueError, OverflowError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
     except PersonalVoiceError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
     key, checksum, size = await asyncio.to_thread(
