@@ -44,3 +44,41 @@ class VideoPlan(BaseModel):
     cta: str = ""
     monetization_angles: list[str] = Field(default_factory=list)
     quality_checks: list[str] = Field(default_factory=list)
+
+
+# Gemini v1beta uses generationConfig.responseMimeType alongside
+# generationConfig.responseJsonSchema to constrain actual output keys.
+# Keep the generation schema deliberately small: the rest of VideoPlan has
+# safe defaults, and a complicated schema can be rejected by Gemini.
+# All required fields are used by the renderer and stored in PostgreSQL.
+GEMINI_VIDEO_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string", "description": "Specific title for the video"},
+        "hook": {"type": "string", "description": "Opening line that hooks viewers"},
+        "script": {"type": "string", "description": "Entire narrated script matching all scenes"},
+        "scenes": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Ordered narration and visuals for each scene",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "sequence": {"type": "integer", "description": "One-based scene order: 1, 2, 3..."},
+                    "narration": {"type": "string", "description": "Speakable voiceover for this scene"},
+                    "visual_prompt": {"type": "string", "description": "Detailed concrete cinematic shot"},
+                    "duration_seconds": {"type": "number", "minimum": 1},
+                    "camera": {"type": "string"},
+                    "lighting": {"type": "string"},
+                },
+                "required": ["sequence", "narration", "visual_prompt", "duration_seconds"],
+                "additionalProperties": False,
+            },
+        },
+        "description": {"type": "string"},
+        "cta": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["title", "hook", "script", "scenes"],
+    "additionalProperties": False,
+}

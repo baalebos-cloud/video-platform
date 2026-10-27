@@ -7,6 +7,7 @@ import httpx
 
 from app.ai.providers.base import LLMProvider, LLMResponse
 from app.ai.providers.openai_http import MediaProviderError
+from app.ai.schemas.video_plan import GEMINI_VIDEO_PLAN_SCHEMA
 
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,100}$")
 
@@ -30,7 +31,10 @@ class GeminiLLMProvider(LLMProvider):
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
             "generationConfig": {
-                **({"responseMimeType": "application/json"} if json_mode else {}),
+                **({
+                    "responseMimeType": "application/json",
+                    "responseJsonSchema": GEMINI_VIDEO_PLAN_SCHEMA,
+                } if json_mode else {}),
             },
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
