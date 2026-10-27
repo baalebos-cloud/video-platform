@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     openai_tts_default_voice: str = "alloy"
     openai_image_model: str = "gpt-image-1.5"
     openai_image_quality: Literal["low", "medium", "high"] = "medium"
+    # Opt-in commercial voice cloning gateway; disabled without all three.
+    voice_clone_api_url: str | None = None
+    voice_clone_api_token: str | None = Field(default=None, repr=False)
+    voice_clone_license_confirmed: bool = False
     google_cloud_project: str | None = None
     google_application_credentials: str | None = None
 
