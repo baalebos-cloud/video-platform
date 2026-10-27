@@ -59,7 +59,7 @@ async def test_reorder_endpoint_requires_ready_video_and_marks_re_render():
     video = SimpleNamespace(id=uuid.uuid4(), status=VideoStatus.READY, needs_rerender=False)
     user = SimpleNamespace(id=uuid.uuid4())
     db = AsyncMock()
-    db.execute.return_value.scalars.return_value.all.return_value = scenes
+    db.execute.return_value = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: scenes))
     with patch.object(storyboards, "require_video_owner", new_callable=AsyncMock, return_value=video):
         answer = await storyboards.update_scene_order(
             video.id, storyboards.SceneOrderUpdate(scene_ids=[ids[1], ids[0], ids[2]]),
