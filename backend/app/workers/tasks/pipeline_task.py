@@ -8,9 +8,11 @@ poll GET /api/v1/videos/{id} for live progress, and every stage is wrapped
 so a failure marks the job FAILED with a stable error_code rather than
 crashing the worker silently.
 """
+import re
 import uuid
 
 from app.ai.director.director import PlanValidationError
+from app.ai.providers.openai_http import MediaProviderError
 from app.config.logging import get_logger
 from app.config.settings import get_settings
 from app.db.models.asset import Asset, AssetType
@@ -56,6 +58,31 @@ def require_live_output_providers(plan_metadata: dict, provider_settings) -> Non
             "Production media providers are not configured or the AI planning gateway failed. "
             "Use real planning, image and voice providers in the Railway worker."
         )
+
+
+
+def provider_failure_details(stage: str, exc: MediaProviderError) -> tuple[str, str, int | None]:
+    """Convert already-sanitized provider failures into stable, actionable states.
+
+    Never forward raw third-party response bodies, exception headers or tokens.
+    """
+    match = re.search(r"\bHTTP (400|401|403|404|408|429|500|502|503|504)\b", str(exc))
+    http_status = int(match.group(1)) if match else None
+    planning = stage == "planning"
+    scope = "planning" if planning else "media"
+    display = "Gemini planning" if planning else "AI media generation"
+
+    if http_status in (401, 403):
+        return (f"{scope}_credentials", f"{display} was denied access (HTTP {http_status}). Check the provider key and API permissions in Railway.", http_status)
+    if http_status == 404:
+        return (f"{scope}_model", f"{display} model was not found (HTTP 404). Check the configured model ID and project access.", http_status)
+    if http_status == 429:
+        return (f"{scope}_quota", f"{display} reached a quota or rate limit (HTTP 429). Check your provider's free-tier usage before retrying.", http_status)
+    if http_status == 400:
+        return (f"{scope}_request", f"{display} rejected its request (HTTP 400). Check the model and request format.", http_status)
+    if http_status in (408, 500, 502, 503, 504):
+        return (f"{scope}_unavailable", f"{display} is temporarily unavailable (HTTP {http_status}). Retry later.", http_status)
+    return (f"{scope}_unavailable", f"{display} could not complete the request. Check worker logs and provider status.", None)
 
 
 async def generation_pipeline(ctx, payload: dict) -> None:
@@ -177,6 +204,23 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             job.output_asset_ids = [str(final_asset.id)]
 
             logger.info("pipeline.succeeded", video_id=str(video_id))
+
+        except MediaProviderError as exc:
+            # Third-party providers sanitize their own exceptions, but we also
+            # map them to fixed descriptions rather than publishing exception text.
+            code, message, http_status = provider_failure_details(video.current_stage or "", exc)
+            job.status = JobStatus.FAILED
+            job.error_code = code
+            job.error_message = message
+            video.status = VideoStatus.FAILED
+            video.error_message = message
+            await credit_service.refund(
+                db, project.user_id, reference_type="video_generation", reference_id=str(job.id)
+            )
+            logger.error(
+                "pipeline.provider_failed", video_id=str(video_id),
+                stage=video.current_stage, error_code=code, provider_http_status=http_status,
+            )
 
         except PlanValidationError as exc:
             job.status = JobStatus.FAILED
