@@ -50,11 +50,18 @@ def put_object(data: bytes, *, content_type: str, prefix: str = "assets") -> tup
     return key, checksum, len(data)
 
 
-def get_signed_url(storage_key: str, expires_in: timedelta = timedelta(minutes=15)) -> str:
-    """Short-lived signed URL for private media, per the security guidelines."""
+def get_signed_url(
+    storage_key: str, expires_in: timedelta = timedelta(minutes=15),
+    *, download_filename: str | None = None,
+) -> str:
+    """Short-lived signed URL; force attachment only for approved export files."""
+    params = {"Bucket": settings.storage_bucket, "Key": storage_key}
+    if download_filename:
+        params["ResponseContentDisposition"] = f'attachment; filename="{download_filename}"'
+        params["ResponseContentType"] = "video/mp4"
     return _client(public=True).generate_presigned_url(
         "get_object",
-        Params={"Bucket": settings.storage_bucket, "Key": storage_key},
+        Params=params,
         ExpiresIn=int(expires_in.total_seconds()),
     )
 

@@ -10,11 +10,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.config.settings import get_settings
 from app.db.models.script import Script
 from app.db.models.scene import Scene
 from app.db.models.generation_job import GenerationJob, JobType, JobStatus
@@ -51,6 +53,7 @@ class GenerateVideoRequest(BaseModel):
     platform: str = "youtube_shorts"
     visual_style: str = "cinematic_realistic"
     creativity: str = "high"
+    caption_style: Literal["none", "classic", "bold", "social", "minimal"] = "none"
     voice: VoicePreferences = Field(default_factory=VoicePreferences)
 
 
@@ -89,6 +92,17 @@ async def generate_video(
     _: None = Depends(generate_rate_limiter),
     db: AsyncSession = Depends(get_db),
 ) -> GenerateVideoResponse:
+    settings = get_settings()
+    if settings.app_env == "production":
+        if settings.image_provider == "mock" or settings.voice_provider == "mock" or settings.llm_provider == "mock":
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Production video generation needs real AI planning, image and voice providers; configure the Railway worker and API.",
+            )
+        if settings.llm_provider == "baalebos_ai" and not settings.llm_gateway_url:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "AI planning gateway is not configured",
+            )
     await require_project_owner(db, payload.project_id, user.id)
     input_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
     # A client-supplied retry key is namespaced to the user. Without a key,
@@ -132,6 +146,7 @@ async def generate_video(
             visual_style=payload.visual_style,
             creativity=payload.creativity,
             voice_preferences=payload.voice.model_dump(),
+            caption_style=payload.caption_style,
             idempotency_key=key,
             input_hash=input_hash,
         )
@@ -305,7 +320,8 @@ async def retry_failed_video(
             language=source.language, locale=source.locale,
             duration_seconds=source.duration_seconds, platform=source.platform,
             visual_style=source.visual_style, creativity=source.creativity,
-            voice_preferences=source.voice_preferences, idempotency_key=retry_key,
+            voice_preferences=source.voice_preferences, caption_style=source.caption_style,
+            idempotency_key=retry_key,
             input_hash=fingerprint,
         )
     except IntegrityError:

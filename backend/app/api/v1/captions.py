@@ -17,7 +17,7 @@ from app.security.permissions import require_video_owner
 
 router = APIRouter(prefix="/videos", tags=["captions"])
 
-CaptionStyle = Literal["classic", "bold", "social", "minimal"]
+CaptionStyle = Literal["none", "classic", "bold", "social", "minimal"]
 
 
 class CaptionEdit(BaseModel):

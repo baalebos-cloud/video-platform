@@ -30,5 +30,6 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
-    max_jobs = 4
+    # A full-HD FFmpeg render is memory intensive. Process one video at a time.
+    max_jobs = 1
     job_timeout = 900  # 15 minutes — generous ceiling for a full render

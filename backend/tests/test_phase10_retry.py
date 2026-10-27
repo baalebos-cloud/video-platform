@@ -12,7 +12,7 @@ def failed_source():
         id=uuid.uuid4(), status=VideoStatus.FAILED,
         project_id=uuid.uuid4(), topic="How batteries work", language="English",
         locale="en-US", duration_seconds=60, platform="youtube_shorts",
-        visual_style="cinematic", creativity="high", voice_preferences={},
+        visual_style="cinematic", creativity="high", voice_preferences={}, caption_style="classic",
     )
 
 @pytest.mark.asyncio
@@ -57,4 +57,5 @@ async def test_retry_creates_new_video_and_preserves_original():
     assert response.video_id == new.id
     assert src.status == VideoStatus.FAILED
     assert create.await_args.kwargs["topic"] == src.topic
+    assert create.await_args.kwargs["caption_style"] == src.caption_style
     assert create.await_args.kwargs["idempotency_key"]

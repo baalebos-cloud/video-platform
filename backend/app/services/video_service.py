@@ -31,6 +31,7 @@ async def start_generation(
     voice_preferences: dict,
     idempotency_key: str | None,
     input_hash: str,
+    caption_style: str = "classic",
 ) -> tuple[Video, GenerationJob]:
     video = Video(
         project_id=project_id,
@@ -43,6 +44,7 @@ async def start_generation(
         visual_style=visual_style,
         creativity=creativity,
         voice_preferences=voice_preferences,
+        caption_style=caption_style,
         status=VideoStatus.QUEUED,
     )
     db.add(video)
