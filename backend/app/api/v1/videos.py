@@ -164,6 +164,21 @@ async def generate_video(
     )
 
 
+def public_generation_error_message(message: str | None) -> str | None:
+    """Legacy failures were stored verbatim; do not re-expose Pydantic payloads.
+
+    Updating the worker cannot retroactively repair failed generation jobs.
+    This message explicitly distinguishes saved failures from new attempts.
+    """
+    if message and message.startswith("AI director output failed validation:") and "validation errors for VideoPlan" in message:
+        return (
+            "This video failed under an older AI director. Its error was saved at "
+            "generation time. Deploy the latest worker and start a new video "
+            "to verify the fix."
+        )
+    return message
+
+
 @router.get("/{video_id}", response_model=VideoStatusResponse)
 async def get_video_status(
     video_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
@@ -174,7 +189,7 @@ async def get_video_status(
         status=video.status.value,
         progress=video.progress,
         current_stage=video.current_stage,
-        error_message=video.error_message,
+        error_message=public_generation_error_message(video.error_message),
         output_asset_id=video.output_asset_id,
         thumbnail_asset_id=video.thumbnail_asset_id,
         project_id=video.project_id,

@@ -8,6 +8,7 @@ from arq.connections import RedisSettings
 
 from app.config.logging import configure_logging, get_logger
 from app.config.settings import get_settings
+from app.config.release import current_release
 from app.workers.tasks.pipeline_task import generation_pipeline
 from app.workers.tasks.publish_task import publish_task
 from app.workers.tasks.rerender_task import rerender_video
@@ -18,7 +19,7 @@ logger = get_logger("worker")
 
 
 async def startup(ctx):
-    logger.info("worker.startup", env=settings.app_env)
+    logger.info("worker.startup", env=settings.app_env, **current_release())
 
 
 async def shutdown(ctx):

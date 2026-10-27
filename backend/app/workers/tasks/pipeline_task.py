@@ -15,6 +15,7 @@ from app.ai.director.director import PlanValidationError
 from app.ai.providers.openai_http import MediaProviderError
 from app.config.logging import get_logger
 from app.config.settings import get_settings
+from app.config.release import current_release
 from app.db.models.asset import Asset, AssetType
 from app.db.models.project import Project
 from app.db.models.generation_job import GenerationJob, JobStatus
@@ -102,6 +103,7 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             return
 
         job.attempts += 1
+        logger.info("pipeline.worker_revision", video_id=str(video_id), **current_release())
         try:
             # --- 1. Plan (script + storyboard spec) ---
             await _mark_stage(db, video, job, "planning", 5)
