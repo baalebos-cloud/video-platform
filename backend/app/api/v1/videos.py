@@ -28,6 +28,9 @@ from app.db.session import get_db
 from app.security.permissions import require_project_owner, require_video_owner
 from app.security.rate_limit import RateLimiter
 from app.services import quota_service, video_service
+from app.db.models.asset import Asset
+from app.api.v1.voice_profiles import is_voice_profile
+from app.services.voice_clone_service import configured_clone_url, VoiceCloneUnavailable
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -35,7 +38,8 @@ generate_rate_limiter = RateLimiter(limit=10, window_seconds=60, scope="video_ge
 
 
 class VoicePreferences(BaseModel):
-    mode: Literal["auto", "recorded"] = "auto"
+    mode: Literal["auto", "recorded", "clone"] = "auto"
+    profile_id: str | None = None
     provider: str | None = None
     voice_id: str | None = None
     gender: str | None = None
@@ -66,11 +70,18 @@ class GenerateVideoRequest(BaseModel):
         }
         if self.locale not in locale_options[self.language]:
             raise ValueError("Select the locale matching the chosen language")
-        if self.language != "English" and self.voice.mode != "recorded":
+        if self.language != "English" and self.voice.mode == "auto":
             raise ValueError(
-                "Yoruba and Nigerian Pidgin require your recorded narration; "
+                "Yoruba and Nigerian Pidgin require recorded narration or an approved licensed voice profile; "
                 "the configured automatic TTS does not support these languages"
             )
+        if self.voice.mode == "clone":
+            if not self.voice.profile_id:
+                raise ValueError("Select your enrolled voice profile for AI narration")
+            try:
+                uuid.UUID(self.voice.profile_id)
+            except (ValueError, AttributeError):
+                raise ValueError("Invalid voice profile ID") from None
         return self
 
 
@@ -121,6 +132,14 @@ async def generate_video(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "AI planning gateway is not configured",
             )
     await require_project_owner(db, payload.project_id, user.id)
+    if payload.voice.mode == "clone":
+        try:
+            configured_clone_url()
+        except VoiceCloneUnavailable:
+            raise HTTPException(503, "Automatic personal voice needs a licensed provider configured by the operator") from None
+        asset = await db.get(Asset, uuid.UUID(payload.voice.profile_id))
+        if not is_voice_profile(asset, user.id):
+            raise HTTPException(404, "Voice profile not found or consent has been revoked")
     input_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
     # A client-supplied retry key is namespaced to the user. Without a key,
     # repeated intentional generations of the same prompt remain possible.
