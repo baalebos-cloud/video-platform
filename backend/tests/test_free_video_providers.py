@@ -35,7 +35,12 @@ async def test_gemini_uses_secret_header_and_json_mode():
     assert result.provider == "gemini"
     assert json.loads(result.text)["title"] == "Video"
     assert received[0].headers["x-goog-api-key"] == "a-key"
-    assert json.loads(received[0].content)["generationConfig"]["responseMimeType"] == "application/json"
+    sent = json.loads(received[0].content)
+    assert sent["generationConfig"]["responseMimeType"] == "application/json"
+    assert "temperature" not in sent["generationConfig"]
+    assert "topP" not in sent["generationConfig"]
+    assert "topK" not in sent["generationConfig"]
+    assert received[0].url.path.endswith("/models/gemini-3.5-flash-lite:generateContent")
 
 
 @pytest.mark.asyncio
@@ -175,3 +180,9 @@ def test_saved_stock_footage_is_reused_on_rerender():
     }
     manifest = make_asset_manifest([scene], assets, owner)
     assert manifest[str(scene.id)]["video_key"] == "video/stock.mp4"
+
+
+def test_gemini_default_matches_current_free_tier_model():
+    settings = Settings(_env_file=None)
+    assert settings.gemini_model == "gemini-3.5-flash-lite"
+    assert GeminiLLMProvider(api_key="test").model == settings.gemini_model

@@ -14,7 +14,7 @@ _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,100}$")
 class GeminiLLMProvider(LLMProvider):
     name = "gemini"
 
-    def __init__(self, *, api_key: str, model: str = "gemini-2.5-flash",
+    def __init__(self, *, api_key: str, model: str = "gemini-3.5-flash-lite",
                  client_factory: Callable[[], httpx.AsyncClient] | None = None):
         if not api_key or not api_key.strip():
             raise ValueError("GEMINI_API_KEY is required")
@@ -30,7 +30,6 @@ class GeminiLLMProvider(LLMProvider):
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
             "generationConfig": {
-                "temperature": 0.5,
                 **({"responseMimeType": "application/json"} if json_mode else {}),
             },
         }

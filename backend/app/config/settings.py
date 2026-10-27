@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # --- AI providers (all optional — mock adapters are used when absent) ---
     llm_provider: Literal["mock", "baalebos_ai", "gemini"] = "mock"
     gemini_api_key: str | None = Field(default=None, repr=False)
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     llm_api_key: str | None = Field(default=None, repr=False)
     # Only used by the "baalebos_ai" LLM provider (a personal multi-provider
     # gateway) — the full webhook URL to POST {"prompt": "..."} to.
