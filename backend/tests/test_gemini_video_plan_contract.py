@@ -72,7 +72,7 @@ async def test_legacy_gemini_response_converts_scene_number_and_reuses_narration
     assert [scene.sequence for scene in plan.scenes] == [1, 2]
     assert plan.hook == "AI helps people at work."
     assert plan.script == "AI helps people at work. It saves time."
-    assert metadata["prompt_version"] == "video-director-v3"
+    assert metadata["prompt_version"] == "video-director-v4"
     assert "hook" not in original  # Input payload was not mutated.
     assert "sequence" not in original["scenes"][0]
 
