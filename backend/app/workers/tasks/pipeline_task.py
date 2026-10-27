@@ -19,6 +19,7 @@ from app.config.settings import get_settings
 from app.config.release import current_release
 from app.db.models.asset import Asset, AssetType
 from app.db.models.project import Project
+from app.db.models.scene import Scene
 from app.db.models.generation_job import GenerationJob, JobStatus
 from app.db.models.video import Video, VideoStatus
 from app.db.session import session_scope
