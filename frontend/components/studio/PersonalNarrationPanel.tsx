@@ -16,6 +16,8 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const mediaStream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const activeSceneId = useRef(scene.id);
+  activeSceneId.current = scene.id;
   const [consent, setConsent] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordedSeconds, setRecordedSeconds] = useState(0);
@@ -50,6 +52,16 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
   }, [audio]);
 
   useEffect(() => {
+    setAudio(null);
+    setSourceSeconds(null);
+    setTrimStart(0);
+    setTrimEnd(0);
+    setError(null);
+    setMessage(null);
+    setConsent(false);
+  }, [scene.id]);
+
+  useEffect(() => {
     return () => {
       if (mediaRecorder.current?.state === "recording") mediaRecorder.current.stop();
       mediaStream.current?.getTracks().forEach(track => track.stop());
@@ -73,7 +85,14 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
       mediaRecorder.current = recorder;
       chunks.current = [];
       recorder.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); };
+      const recordingSceneId = scene.id;
       recorder.onstop = () => {
+        if (activeSceneId.current !== recordingSceneId) {
+          chunks.current = [];
+          stream.getTracks().forEach(track => track.stop());
+          setRecording(false);
+          return;
+        }
         const result = new Blob(chunks.current, {type: recorder.mimeType || format || "audio/webm"});
         chunks.current = [];
         mediaStream.current?.getTracks().forEach(track => track.stop());
