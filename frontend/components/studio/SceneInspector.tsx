@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api/client";
 import { StudioIcon } from "@/components/ui/StudioIcon";
 import { ClipTimingInspector } from "@/components/studio/ClipTimingInspector";
+import { PersonalNarrationPanel } from "@/components/studio/PersonalNarrationPanel";
 import type { StoryboardScene } from "@/types";
 
 export function SceneInspector({ videoId, scene, canEdit, onUpdated }: {
@@ -75,7 +76,9 @@ export function SceneInspector({ videoId, scene, canEdit, onUpdated }: {
     <div className="border-t border-white/10 pt-5">
       <p className="studio-eyebrow mb-2">Narration</p>
       <p className="rounded-xl bg-[#111320] p-4 text-sm leading-relaxed text-[#c6cada]">{scene.narration || "No narration supplied."}</p>
-      <p className="mt-2 text-xs text-[#8d92aa]">Narration is read-only in this editor.</p>
+      <p className="mt-2 text-xs text-[#8d92aa]">The generated script is read-only. You can replace its spoken voice with your own recording below.</p>
+      <PersonalNarrationPanel videoId={videoId} scene={scene}
+        canEdit={canEdit} onUpdated={onUpdated}/>
     </div>
     <div className="border-t border-white/10 pt-5">
       <label htmlFor="visual-prompt" className="mb-2 block text-sm font-semibold">Visual prompt</label>
