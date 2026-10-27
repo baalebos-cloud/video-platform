@@ -72,6 +72,8 @@ export interface StoryboardScene {
   max_duration_seconds: number;
   transition_in: "cut" | "fade_black";
   visual_asset_id: string | null;
+  audio_asset_id: string | null;
+  audio_state: "generated" | "recorded" | "pending";
   on_screen_text: string | null;
 }
 
