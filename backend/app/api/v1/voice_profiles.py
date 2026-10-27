@@ -6,7 +6,6 @@ inference service is explicitly provisioned by the operator.
 """
 import asyncio
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
