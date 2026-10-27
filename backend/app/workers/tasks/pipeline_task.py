@@ -24,6 +24,7 @@ from app.db.session import session_scope
 from app.services.storage_service import put_object
 from app.workers.tasks import render_task, script_task, storyboard_task, visual_task, voice_task
 from app.services import credit_service
+from app.services.provider_guard import MediaGuardError
 
 logger = get_logger("workers.pipeline")
 
@@ -67,6 +68,20 @@ def provider_failure_details(stage: str, exc: MediaProviderError) -> tuple[str, 
 
     Never forward raw third-party response bodies, exception headers or tokens.
     """
+    if isinstance(exc, MediaGuardError):
+        if exc.reason == "daily_quota_exceeded":
+            return (
+                "media_daily_limit",
+                "Daily media-call safety limit reached. Check MAX_DAILY_LIVE_MEDIA_CALLS "
+                "and your providers' free-tier allowances before starting another video.",
+                None,
+            )
+        return (
+            "media_guard_redis_unavailable",
+            "Media request quota could not be verified in Redis. "
+            "Check the worker's Redis connection and provider_guard logs.",
+            None,
+        )
     match = re.search(r"\bHTTP (400|401|403|404|408|429|500|502|503|504)\b", str(exc))
     http_status = int(match.group(1)) if match else None
     planning = stage == "planning"
@@ -122,8 +137,26 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             scene_assets: dict[str, dict] = {}
             provider_settings = get_settings()
             for scene in scenes:
+                logger.info(
+                    "pipeline.scene_voice_started",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                    provider=provider_settings.voice_provider,
+                )
                 audio_key, duration = await voice_task.run(video, scene)
+                logger.info(
+                    "pipeline.scene_voice_ready",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                )
+                logger.info(
+                    "pipeline.scene_visual_started",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                )
                 visual = await visual_task.run(video, scene)
+                logger.info(
+                    "pipeline.scene_visual_ready",
+                    video_id=str(video_id), scene_sequence=scene.sequence,
+                    provider=visual["provider"],
+                )
                 image_key = visual["image_key"]
                 stock_key = visual.get("video_key")
                 if stock_key:

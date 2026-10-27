@@ -115,21 +115,32 @@ def test_production_real_media_requires_credits_enforcement():
 
 @pytest.mark.asyncio
 async def test_provider_guard_blocks_calls_after_daily_limit():
-    redis = SimpleNamespace(eval=AsyncMock(side_effect=[1, 3]))
+    pipe = MagicMock()
+    pipe.__aenter__ = AsyncMock(return_value=pipe)
+    pipe.__aexit__ = AsyncMock(return_value=None)
+    pipe.execute = AsyncMock(side_effect=[[1, True], [3, True]])
+    redis = MagicMock()
+    redis.pipeline.return_value = pipe
     settings = config(max_daily_live_media_calls=2)
     with patch.object(provider_guard, "get_redis", return_value=redis), \
          patch.object(provider_guard, "get_settings", return_value=settings):
         await provider_guard.claim_media_call("voice")
-        with pytest.raises(MediaProviderError, match="Daily live-media request limit"):
+        with pytest.raises(MediaProviderError, match="daily_quota_exceeded"):
             await provider_guard.claim_media_call("image")
-    assert redis.eval.await_count == 2
+    assert pipe.execute.await_count == 2
+    redis.pipeline.assert_called_with(transaction=True)
 
 
 @pytest.mark.asyncio
 async def test_provider_guard_fails_closed_when_redis_down():
-    redis = SimpleNamespace(eval=AsyncMock(side_effect=RedisConnectionError("not connected")))
+    pipe = MagicMock()
+    pipe.__aenter__ = AsyncMock(return_value=pipe)
+    pipe.__aexit__ = AsyncMock(return_value=None)
+    pipe.execute = AsyncMock(side_effect=RedisConnectionError("not connected"))
+    redis = MagicMock()
+    redis.pipeline.return_value = pipe
     with patch.object(provider_guard, "get_redis", return_value=redis):
-        with pytest.raises(MediaProviderError, match="unavailable"):
+        with pytest.raises(MediaProviderError, match="redis_unavailable"):
             await provider_guard.claim_media_call("voice_preview")
 
 
