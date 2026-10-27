@@ -66,7 +66,7 @@ async def test_cloudflare_flux_jpeg_is_converted_to_png():
             "image": base64.b64encode(buf.getvalue()).decode(),
         }})
     provider = CloudflareImageProvider(
-        account_id="account", api_token="token",
+        account_id="0123456789abcdef0123456789abcdef", api_token="token",
         client_factory=mock_client(handler),
     )
     result = await provider.generate("A cinematic mountain", aspect_ratio="9:16")
@@ -86,7 +86,7 @@ async def test_cloudflare_melotts_normalizes_narration(monkeypatch):
             "audio": base64.b64encode(b"fake-mp3-bytes").decode(),
         }})
     provider = CloudflareVoiceProvider(
-        account_id="account", api_token="token", client_factory=mock_client(handler),
+        account_id="0123456789abcdef0123456789abcdef", api_token="token", client_factory=mock_client(handler),
     )
     result = await provider.synthesize({"text": "Hello from the platform", "locale": "en-US"})
     assert result.format == "wav"
