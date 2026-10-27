@@ -271,7 +271,7 @@ export default function VideoEditorPage() {
             <StudioIcon name="refresh" size={16}/> {rerendering ? "Queueing…" : "Re-render edits"}
           </button>}
           <button type="button" className="studio-button" onClick={() => setExportOpen(true)}
-            disabled={!video?.output_asset_id || pendingNarration > 0}>
+            disabled={!video?.output_asset_id || pendingNarration > 0 || video.needs_rerender || video.status !== "ready"}>
             <StudioIcon name="download" size={17}/> Export
           </button>
         </div>
@@ -473,7 +473,7 @@ export default function VideoEditorPage() {
               disabled={rerendering} onClick={() => void startRerender()}>
               {rerendering ? "Queueing…" : "Re-render edits"}
             </button>}
-            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading || pendingNarration > 0}
+            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading || pendingNarration > 0 || video?.needs_rerender || video?.status !== "ready"
               onClick={() => void downloadVideo()}>
               <StudioIcon name="download" size={16}/> {downloading ? "Preparing…" : video?.needs_rerender ? "Download previous MP4" : "Download MP4"}
             </button>
