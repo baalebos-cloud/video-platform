@@ -94,3 +94,52 @@ def test_short_form_keeps_original_voice_duration_behavior():
 def test_long_form_worker_has_sufficient_time_for_render():
     assert WorkerSettings.max_jobs == 1
     assert WorkerSettings.job_timeout >= 1800
+
+
+@pytest.mark.asyncio
+async def test_long_form_retries_underlength_plan_once_before_media():
+    import json
+    from unittest.mock import patch
+    from app.ai.director.director import create_plan
+    from app.ai.providers.base import LLMResponse
+
+    short = three_minute_plan(words_per_scene=5)
+    full = three_minute_plan()
+    class Provider:
+        calls = 0
+        async def complete(self, system_prompt, user_prompt, *, json_mode=False):
+            self.calls += 1
+            assert json_mode
+            if self.calls == 2:
+                assert "failed the full-length constraint" in user_prompt
+            plan = short if self.calls == 1 else full
+            return LLMResponse(text=plan.model_dump_json(), model="fake", provider="gemini")
+
+    provider = Provider()
+    with patch("app.ai.director.director.select_provider", return_value=provider):
+        plan, meta = await create_plan(topic="Practical AI", duration=180)
+    assert provider.calls == 2
+    assert meta["prompt_version"] == "video-director-v3"
+    assert len(plan.scenes) == 12
+
+
+@pytest.mark.asyncio
+async def test_long_form_two_short_plans_fail_before_any_tts():
+    from unittest.mock import patch
+    from app.ai.director.director import create_plan
+    from app.ai.providers.base import LLMResponse
+
+    class Provider:
+        calls = 0
+        async def complete(self, *args, **kwargs):
+            self.calls += 1
+            return LLMResponse(
+                text=three_minute_plan(words_per_scene=5).model_dump_json(),
+                model="fake", provider="gemini",
+            )
+
+    provider = Provider()
+    with patch("app.ai.director.director.select_provider", return_value=provider):
+        with pytest.raises(PlanValidationError, match="too little spoken narration"):
+            await create_plan(topic="Practical AI", duration=180)
+    assert provider.calls == 2
