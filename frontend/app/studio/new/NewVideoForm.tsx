@@ -6,6 +6,7 @@ import { StudioIcon } from "@/components/ui/StudioIcon";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import type { GenerateVideoResponse, Voice } from "@/types";
+import { VoiceProfileStudio, type VoiceProfile } from "@/components/studio/VoiceProfileStudio";
 
 const PLATFORMS = ["youtube_shorts", "tiktok", "instagram_reels", "youtube_landscape"];
 const VISUAL_STYLES = ["cinematic_realistic", "documentary", "animated", "product"];
@@ -18,7 +19,7 @@ const LANGUAGE_OPTIONS = [
   { label: "Yoruba", locale: "yo-NG" },
 ] as const;
 type LanguageOption = typeof LANGUAGE_OPTIONS[number]["label"];
-type VoiceMode = "auto" | "recorded";
+type VoiceMode = "auto" | "recorded" | "cloned";
 
 function NewVideoForm() {
   const router = useRouter();
@@ -29,6 +30,9 @@ function NewVideoForm() {
   const [language, setLanguage] = useState<LanguageOption>("English");
   const [locale, setLocale] = useState("en-NG");
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("auto");
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([]);
+  const [cloneReady, setCloneReady] = useState(false);
+  const [voiceProfileId, setVoiceProfileId] = useState("");
   const [duration, setDuration] = useState(180);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
   const [visualStyle, setVisualStyle] = useState(VISUAL_STYLES[0]);
@@ -47,6 +51,22 @@ function NewVideoForm() {
     apiRequest<Voice[]>(`/voices?locale=${locale}`).then(setVoices).catch(() => setVoices([]));
   }, [locale, language, voiceMode]);
 
+  async function refreshVoiceProfiles() {
+    try {
+      const profiles = await apiRequest<VoiceProfile[]>("/voice-profiles");
+      setVoiceProfiles(profiles);
+    } catch {
+      setVoiceProfiles([]);
+    }
+  }
+
+  useEffect(() => {
+    void refreshVoiceProfiles();
+    apiRequest<{automatic_cloning: boolean}>("/voice-profiles/capabilities")
+      .then(result => setCloneReady(result.automatic_cloning))
+      .catch(() => setCloneReady(false));
+  }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!projectId) {
@@ -59,6 +79,11 @@ function NewVideoForm() {
     }
     if (!Number.isInteger(duration) || duration < 5 || duration > MAX_DURATION_SECONDS) {
       setError("Select a duration between 5 seconds and 3 minutes.");
+      return;
+    }
+    if (voiceMode === "cloned" && (!cloneReady || !voiceProfileId ||
+        !voiceProfiles.some(profile => profile.id === voiceProfileId && profile.language === language))) {
+      setError("Select a saved voice profile and configure licensed synthesis first.");
       return;
     }
     setSubmitting(true);
@@ -75,7 +100,7 @@ function NewVideoForm() {
           platform,
           visual_style: visualStyle,
           caption_style: captionStyle,
-          voice: { mode: voiceMode, ...(voiceMode === "auto" && voiceId ? { voice_id: voiceId } : {}) },
+          voice: { mode: voiceMode, ...(voiceMode === "auto" && voiceId ? { voice_id: voiceId } : {}), ...(voiceMode === "cloned" ? { profile_id: voiceProfileId } : {}) },
         },
       });
       router.push(`/studio/video/${result.video_id}`);
@@ -120,6 +145,7 @@ function NewVideoForm() {
                 setLanguage(option.label);
                 setLocale(option.locale);
                 setVoiceMode(option.label === "English" ? "auto" : "recorded");
+                setVoiceProfileId("");
                 setVoiceId(undefined);
               }}>
               {LANGUAGE_OPTIONS.map(option =>
@@ -194,6 +220,7 @@ function NewVideoForm() {
                 onChange={event => { setVoiceMode(event.target.value as VoiceMode); setVoiceId(undefined); }}>
                 {language === "English" && <option value="auto">AI English narrator</option>}
                 <option value="recorded">My own recorded voice</option>
+                {cloneReady && <option value="cloned">My AI voice (licensed model)</option>}
               </select>
               {voiceMode === "auto" && <select aria-label="AI narrator" className="studio-input mt-2"
                 value={voiceId ?? ""} onChange={event => setVoiceId(event.target.value || undefined)}>
@@ -202,6 +229,19 @@ function NewVideoForm() {
                   {voice.voice_id} ({voice.gender ?? "unspecified"})
                 </option>)}
               </select>}
+              {voiceMode === "cloned" && <div className="mt-2">
+                <label htmlFor="personal-voice-select" className="text-xs text-[#a5abc4]">Saved profile for this language</label>
+                <select id="personal-voice-select" className="studio-input mt-2" value={voiceProfileId}
+                  onChange={event => setVoiceProfileId(event.target.value)}>
+                  <option value="">Choose my voice</option>
+                  {voiceProfiles.filter(p => p.language === language).map(profile => (
+                    <option key={profile.id} value={profile.id}>{profile.name}</option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-amber-200">
+                  Cloning uses a separately hosted licensed inference service and may have infrastructure costs.
+                </p>
+              </div>}
               {voiceMode === "recorded" && <p className="mt-2 text-xs leading-relaxed text-[#a5aaca]">
                 The first render is a silent storyboard. After generation, record or upload
                 your own narration for each scene and click Re-render edits. This uses your
