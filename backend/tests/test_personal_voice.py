@@ -55,7 +55,7 @@ def test_supported_languages_allow_explicit_self_recorded_mode(lang, locale):
     ("Nigerian Pidgin", "pcm-NG"), ("Yoruba", "yo-NG"),
 ])
 def test_unsupported_cloudflare_languages_block_auto_tts(lang, locale):
-    with pytest.raises(ValidationError, match="require your recorded narration"):
+    with pytest.raises(ValidationError, match="require recorded narration"):
         GenerateVideoRequest(project_id=uuid.uuid4(), topic="Training video",
                              language=lang, locale=locale, voice={"mode": "auto"})
 
