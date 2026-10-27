@@ -283,7 +283,7 @@ async def rerender_video(
 
     result = await db.execute(select(Scene).where(Scene.video_id == video.id))
     scenes = list(result.scalars().all())
-    if (video.voice_preferences or {}).get("mode") == "recorded" and scenes:
+    if (getattr(video, "voice_preferences", None) or {}).get("mode") == "recorded" and scenes:
         asset_ids = [scene.audio_asset_id for scene in scenes if scene.audio_asset_id]
         voices = await db.execute(
             select(Asset).where(Asset.id.in_(asset_ids), Asset.owner_id == user.id, Asset.type == AssetType.AUDIO)
