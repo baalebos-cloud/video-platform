@@ -42,6 +42,20 @@ def settings(**kwargs):
     )
 
 
+@pytest.mark.parametrize("endpoint", [
+    "https://169.254.169.254/latest/meta-data/",
+    "https://10.0.0.1/private",
+    "https://192.168.1.8/infer",
+    "https://[::1]/infer",
+    "https://metadata.google.internal/v1",
+])
+def test_unlicensed_voice_gateway_cannot_point_to_internal_addresses(endpoint):
+    assert not settings(
+        voice_clone_endpoint=endpoint, voice_clone_token="secret",
+        voice_clone_license_approved=True,
+    ).voice_clone_enabled
+
+
 def test_voice_cloning_is_off_by_default():
     assert not settings().voice_clone_enabled
     assert not settings(voice_clone_endpoint="https://voice.test/api/synthesize",
