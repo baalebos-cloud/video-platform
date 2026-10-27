@@ -21,6 +21,7 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
   const [consent, setConsent] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordedSeconds, setRecordedSeconds] = useState(0);
+  const [microphoneLevel, setMicrophoneLevel] = useState<number | null>(null);
   const [sourceSeconds, setSourceSeconds] = useState<number | null>(null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
@@ -43,6 +44,42 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
     }, 200);
     return () => window.clearInterval(interval);
   }, [recording, scene.duration_seconds]);
+
+  useEffect(() => {
+    // Read the existing microphone stream locally. The level never leaves
+    // the browser and no additional audio is saved or transmitted.
+    if (!recording || !mediaStream.current) {
+      return;
+    }
+    const Context = window.AudioContext;
+    if (!Context) return;
+    let context: AudioContext | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    try {
+      context = new Context();
+      const source = context.createMediaStreamSource(mediaStream.current);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const readings = new Uint8Array(analyser.frequencyBinCount);
+      timer = setInterval(() => {
+        analyser.getByteFrequencyData(readings);
+        // A relative mic activity indicator, not a calibrated decibel meter.
+        const mean = readings.reduce((sum, level) => sum + level, 0) / readings.length;
+        setMicrophoneLevel(Math.min(100, Math.round(mean / 128 * 100)));
+      }, 180);
+    } catch {
+      // Microphone recording still works when web audio metering is blocked.
+      void context?.close().catch(() => undefined);
+      return;
+    }
+    const activeContext = context;
+    return () => {
+      if (timer) clearInterval(timer);
+      void activeContext?.close().catch(() => undefined);
+      setMicrophoneLevel(null);
+    };
+  }, [recording]);
 
   useEffect(() => {
     if (!audio) { setPreviewUrl(null); return; }
@@ -218,6 +255,14 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
     {recording && <div role="status" className="text-xs text-amber-200">
       <div className="flex justify-between gap-3"><span>Recording microphone · {recordedSeconds.toFixed(1)}s</span>
         <span>Limit {scene.duration_seconds.toFixed(1)}s</span></div>
+      {microphoneLevel !== null && <>
+        <span className="mt-2 block text-[#b9c0da]">Microphone activity (relative level)</span>
+        <div role="meter" aria-label="Live microphone activity"
+          aria-valuemin={0} aria-valuemax={100} aria-valuenow={microphoneLevel}
+          className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full bg-emerald-400 transition-[width]" style={{width: `${microphoneLevel}%`}} />
+        </div>
+      </>}
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
         <div className="h-full bg-amber-400" style={{width: `${Math.min(100, recordedSeconds / scene.duration_seconds * 100)}%`}} />
       </div>
