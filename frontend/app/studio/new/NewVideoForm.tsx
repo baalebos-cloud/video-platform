@@ -10,6 +10,8 @@ import type { GenerateVideoResponse, Voice } from "@/types";
 const PLATFORMS = ["youtube_shorts", "tiktok", "instagram_reels", "youtube_landscape"];
 const VISUAL_STYLES = ["cinematic_realistic", "documentary", "animated", "product"];
 const MAX_TOPIC_LENGTH = 1024;
+const DURATION_PRESETS = [30, 60, 90, 120, 180] as const;
+const MAX_DURATION_SECONDS = 180;
 
 function NewVideoForm() {
   const router = useRouter();
@@ -19,7 +21,7 @@ function NewVideoForm() {
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState("English");
   const [locale, setLocale] = useState("en-US");
-  const [duration, setDuration] = useState(60);
+  const [duration, setDuration] = useState(180);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
   const [visualStyle, setVisualStyle] = useState(VISUAL_STYLES[0]);
   const [captionStyle, setCaptionStyle] = useState<"none" | "classic" | "bold">("none");
@@ -40,6 +42,10 @@ function NewVideoForm() {
     }
     if (topic.trim().length < 3) {
       setError("Enter a topic of at least 3 characters.");
+      return;
+    }
+    if (!Number.isInteger(duration) || duration < 5 || duration > MAX_DURATION_SECONDS) {
+      setError("Select a duration between 5 seconds and 3 minutes.");
       return;
     }
     setSubmitting(true);
@@ -127,10 +133,29 @@ function NewVideoForm() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <label className="block text-sm font-medium">Duration (seconds)
-              <input className="studio-input mt-2" type="number" min={5} max={180} value={duration}
+            <div>
+              <label htmlFor="video-duration" className="mb-2 block text-sm font-medium">
+                Video length <span className="text-violet-300">{Math.floor(duration / 60)}:{String(duration % 60).padStart(2, "0")}</span>
+              </label>
+              <div aria-label="Video length presets" className="mb-2 flex flex-wrap gap-1.5">
+                {DURATION_PRESETS.map(seconds => (
+                  <button type="button" key={seconds} aria-pressed={duration === seconds}
+                    onClick={() => setDuration(seconds)}
+                    className={`rounded-lg border px-2 py-1.5 text-xs transition ${duration === seconds
+                      ? "border-violet-400 bg-violet-500/20 text-white"
+                      : "border-white/15 text-[#a7afcb] hover:bg-white/5"}`}>
+                    {seconds === 180 ? "Full video · 3 min" : seconds === 90 ? "1 min 30s" : seconds < 60 ? `${seconds}s` : `${seconds / 60} min`}
+                  </button>
+                ))}
+              </div>
+              <input id="video-duration" className="studio-input" type="number" min={5}
+                max={MAX_DURATION_SECONDS} step={1} value={duration}
                 onChange={e => setDuration(Number(e.target.value))} />
-            </label>
+              <p className="mt-2 text-xs leading-relaxed text-[#969db7]">
+                Full-length mode generates a developed script, more scenes and longer narration.
+                3-minute videos use more free-tier AI calls and render time; your provider quotas still apply.
+              </p>
+            </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-[#e0e2f1]">Voice</label>
               <select

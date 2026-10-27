@@ -8,7 +8,7 @@ import json
 
 from pydantic import ValidationError
 
-from app.ai.prompts.video_director_v2 import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
+from app.ai.prompts.video_director_v3 import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
 from app.ai.providers.registry import select_provider
 from app.ai.schemas.video_plan import VideoPlan
 from app.config.logging import get_logger
@@ -138,6 +138,40 @@ def validate_video_plan(plan: VideoPlan) -> None:
             raise PlanValidationError(f"AI director scene {position} has invalid duration.")
 
 
+def validate_long_form_plan(plan: VideoPlan, requested_seconds: int) -> None:
+    """Guard free media quota: reject under-length storyboards before TTS/image calls.
+
+    Scene planned times control FFmpeg, but a three-minute video also needs
+    real narration. Both checks matter; silence-only padding is not enough.
+    """
+    import math
+
+    if requested_seconds < 90:
+        return
+    scene_count = len(plan.scenes)
+    minimum_scenes = max(5, math.ceil(requested_seconds / 20))
+    if not minimum_scenes <= scene_count <= 16:
+        raise PlanValidationError(
+            f"Long-form storyboard needs {minimum_scenes}-16 scenes for "
+            f"{requested_seconds}s (received {scene_count})."
+        )
+    planned_seconds = sum(scene.duration_seconds for scene in plan.scenes)
+    if not 0.9 * requested_seconds <= planned_seconds <= 1.15 * requested_seconds:
+        raise PlanValidationError(
+            "AI director planned scene durations do not cover the requested runtime."
+        )
+    narration_words = sum(len(scene.narration.split()) for scene in plan.scenes)
+    minimum_words = math.ceil(requested_seconds * 2.1)
+    if narration_words < minimum_words:
+        raise PlanValidationError(
+            f"AI director produced too little spoken narration for {requested_seconds}s "
+            f"({narration_words} words; minimum {minimum_words}). "
+            "Try another generation to obtain a complete full-length script."
+        )
+    if any(len(scene.narration) > 2800 for scene in plan.scenes):
+        raise PlanValidationError("Scene narration exceeds the safe text-to-speech input length.")
+
+
 async def create_plan(
     *,
     topic: str,
@@ -174,24 +208,49 @@ async def create_plan(
         cta=cta,
     )
 
-    response = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
-
-    try:
-        raw = json.loads(response.text)
-        plan = VideoPlan.model_validate(normalize_video_plan_payload(raw))
-    except (json.JSONDecodeError, ValidationError) as exc:
-        # Pydantic error strings include the model's raw values, which may
-        # contain user-submitted content. Publish field names only.
-        paths = []
-        if isinstance(exc, ValidationError):
-            paths = [
-                ".".join(str(part) for part in issue["loc"])
-                for issue in exc.errors()
-            ]
-        logger.error("director.plan_validation_failed", invalid_fields=paths[:10])
-        fields = ", ".join(paths[:10]) if paths else "invalid JSON"
-        raise PlanValidationError(f"AI director returned an invalid plan; fields: {fields}") from None
-    validate_video_plan(plan)
+    # Long-form outputs must meet a measurable speaking-time contract.
+    # Allow one extra Gemini planning attempt, *before* any image/TTS calls,
+    # rather than wasting a dozen media generations on a short storyboard.
+    # This does count as an additional free-tier text request if needed.
+    attempt_limit = 2 if duration >= 90 else 1
+    for attempt in range(attempt_limit):
+        response = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
+        try:
+            raw = json.loads(response.text)
+            plan = VideoPlan.model_validate(normalize_video_plan_payload(raw))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            paths = []
+            if isinstance(exc, ValidationError):
+                paths = [
+                    ".".join(str(part) for part in issue["loc"])
+                    for issue in exc.errors()
+                ]
+            logger.error("director.plan_validation_failed", invalid_fields=paths[:10])
+            fields = ", ".join(paths[:10]) if paths else "invalid JSON"
+            raise PlanValidationError(
+                f"AI director returned an invalid plan; fields: {fields}"
+            ) from None
+        validate_video_plan(plan)
+        try:
+            validate_long_form_plan(plan, duration)
+        except PlanValidationError as exc:
+            if attempt + 1 >= attempt_limit:
+                raise
+            logger.warning(
+                "director.long_form_replanning",
+                requested_seconds=duration,
+                completed_attempt=attempt + 1,
+                scene_count=len(plan.scenes),
+            )
+            user_prompt += (
+                "\\nYour previous answer failed the full-length constraint: "
+                + str(exc) + " Rewrite the entire structured plan. Include "
+                + "full, substantive spoken narration in each scene and keep "
+                + "the total scene duration near the exact requested runtime. "
+                + "Do not add silent or filler scenes.\\n"
+            )
+            continue
+        break
 
     metadata = {
         "prompt_version": PROMPT_VERSION,

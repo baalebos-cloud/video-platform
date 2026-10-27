@@ -1,14 +1,14 @@
 """Release trace regression tests, no third-party credentials or network."""
 from app.api.v1.videos import public_generation_error_message
 from app.config.release import current_release, public_release
-from app.ai.prompts.video_director_v2 import PROMPT_VERSION
+from app.ai.prompts.video_director_v3 import PROMPT_VERSION
 
 
 def test_worker_release_identifies_actually_imported_director(monkeypatch):
     monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "f114fbef538b24e965e884859e64c9a52ff99775")
     monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "test-deployment-id")
     info = current_release()
-    assert info["director_contract"] == PROMPT_VERSION == "video-director-v2"
+    assert info["director_contract"] == PROMPT_VERSION == "video-director-v3"
     assert info["git_commit"] == "f114fbef538b24e965e884859e64c9a52ff99775"
     assert info["deployment_id"] == "test-deployment-id"
     assert len(info["director_source"]) == 12
@@ -20,7 +20,7 @@ def test_public_health_identifies_version_without_deployment_ids(monkeypatch):
     monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "private-deploy-identifier")
     info = public_release()
     assert info["git_commit"] == "abcdef123456"
-    assert info["director_contract"] == "video-director-v2"
+    assert info["director_contract"] == "video-director-v3"
     assert "deployment_id" not in info
     assert "private-deploy-identifier" not in str(info)
 

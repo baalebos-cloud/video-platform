@@ -19,6 +19,7 @@ from app.config.settings import get_settings
 from app.config.release import current_release
 from app.db.models.asset import Asset, AssetType
 from app.db.models.project import Project
+from app.db.models.scene import Scene
 from app.db.models.generation_job import GenerationJob, JobStatus
 from app.db.models.video import Video, VideoStatus
 from app.db.session import session_scope
@@ -135,6 +136,26 @@ def provider_failure_details(stage: str, exc: MediaProviderError) -> tuple[str, 
     return (f"{scope}_unavailable", f"{display} could not complete the request. Check worker logs and provider status.", None)
 
 
+def scene_runtime_floor(scenes: list[Scene], requested_seconds: int) -> dict[str, float]:
+    """Distribute a full-length video's requested runtime across planned scenes.
+
+    The director must first validate sufficient spoken content. The TTS audio
+    may speak faster than predicted; preserving each scene's planned runtime
+    prevents a 180-second project silently exporting as a short-form MP4.
+    Short-form videos keep their previous measured-narration behavior.
+    """
+    if requested_seconds < 90:
+        return {}
+    planned = sum(max(0.0, float(scene.duration_seconds)) for scene in scenes)
+    if planned <= 0:
+        raise PlanValidationError("AI director supplied no usable long-form scene durations.")
+    ratio = max(1.0, requested_seconds / planned)
+    return {
+        str(scene.id): round(float(scene.duration_seconds) * ratio, 3)
+        for scene in scenes
+    }
+
+
 async def generation_pipeline(ctx, payload: dict) -> None:
     video_id = uuid.UUID(payload["video_id"])
     job_id = uuid.UUID(payload["job_id"])
@@ -162,6 +183,7 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             await _mark_stage(db, video, job, "scripting", STAGE_WEIGHTS["planning"])
             await _mark_stage(db, video, job, "storyboarding", STAGE_WEIGHTS["planning"] + STAGE_WEIGHTS["scripting"])
             script, scenes = await storyboard_task.run(db, video, plan)
+            runtime_floor = scene_runtime_floor(scenes, video.duration_seconds)
 
             # --- 2. Per-scene asset generation (voice + visuals) ---
             await _mark_stage(
@@ -176,10 +198,13 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                     video_id=str(video_id), scene_sequence=scene.sequence,
                     provider=provider_settings.voice_provider,
                 )
-                audio_key, duration = await voice_task.run(video, scene)
+                audio_key, voice_seconds = await voice_task.run(video, scene)
+                duration = max(voice_seconds, runtime_floor.get(str(scene.id), 0.0))
                 logger.info(
                     "pipeline.scene_voice_ready",
                     video_id=str(video_id), scene_sequence=scene.sequence,
+                    measured_voice_seconds=round(voice_seconds, 2),
+                    planned_clip_seconds=round(duration, 2),
                 )
                 logger.info(
                     "pipeline.scene_visual_started",

@@ -49,7 +49,7 @@ class GenerateVideoRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=1024)
     language: str = "English"
     locale: str = "en-US"
-    duration_seconds: int = Field(default=60, ge=5, le=600)
+    duration_seconds: int = Field(default=60, ge=5, le=180)
     platform: str = "youtube_shorts"
     visual_style: str = "cinematic_realistic"
     creativity: str = "high"
