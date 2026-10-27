@@ -104,3 +104,28 @@ def burn_in_captions(
 
 def generate_thumbnail(video_path: Path, output_path: Path, at_seconds: float = 0.5) -> None:
     _run(["ffmpeg", "-y", "-ss", str(at_seconds), "-i", str(video_path), "-frames:v", "1", str(output_path)])
+
+
+def render_stock_clip(
+    footage_path: Path, audio_path: Path, duration_seconds: float,
+    output_path: Path, *, aspect_ratio: str = "9:16",
+) -> None:
+    """Render real licensed footage (repeated if short), cropped for the destination platform."""
+    if aspect_ratio not in {"9:16", "16:9", "1:1"}:
+        raise RenderError("Unsupported aspect ratio")
+    if duration_seconds <= 0:
+        raise RenderError("Scene duration must be positive")
+    width, height = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}[aspect_ratio]
+    filters = (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},fps=24,setsar=1,format=yuv420p"
+    )
+    _run([
+        "ffmpeg", "-y", "-stream_loop", "-1", "-i", str(footage_path),
+        "-i", str(audio_path), "-map", "0:v:0", "-map", "1:a:0",
+        "-vf", filters, "-af", "apad", "-t", str(duration_seconds),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+        "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(output_path),
+    ])
