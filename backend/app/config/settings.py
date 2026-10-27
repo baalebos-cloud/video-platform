@@ -88,6 +88,24 @@ class Settings(BaseSettings):
     video_provider: str = "mock"
     video_api_key: str | None = Field(default=None, repr=False)
 
+    # Private licensed inference is optional and OFF unless configured.
+    # Never enable for a research-only model in a commercial product.
+    voice_clone_endpoint: str | None = None
+    voice_clone_token: str | None = Field(default=None, repr=False)
+    voice_clone_license_approved: bool = False
+
+    @property
+    def voice_clone_enabled(self) -> bool:
+        from urllib.parse import urlsplit
+        if not (self.voice_clone_license_approved and self.voice_clone_endpoint and self.voice_clone_token):
+            return False
+        parsed = urlsplit(self.voice_clone_endpoint)
+        return parsed.scheme == "https" and bool(parsed.hostname) and not (
+            parsed.username or parsed.password or parsed.fragment or
+            parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0"} or
+            parsed.hostname.endswith((".internal", ".local"))
+        )
+
     # --- Publishing ---
     youtube_client_id: str | None = None
     youtube_client_secret: str | None = Field(default=None, repr=False)
