@@ -111,7 +111,7 @@ async def test_long_form_retries_underlength_plan_once_before_media():
             self.calls += 1
             assert json_mode
             if self.calls == 2:
-                assert "failed the full-length constraint" in user_prompt
+                assert "REVISION REQUIRED" in user_prompt
             plan = short if self.calls == 1 else full
             return LLMResponse(text=plan.model_dump_json(), model="fake", provider="gemini")
 
