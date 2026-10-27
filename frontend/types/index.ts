@@ -41,6 +41,7 @@ export interface VideoStatusResponse {
   language?: string | null;
   duration_seconds?: number | null;
   needs_rerender?: boolean;
+  voice_mode?: "auto" | "recorded" | "cloned";
 }
 
 export interface ProjectVideo {
