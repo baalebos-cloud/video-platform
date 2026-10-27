@@ -94,10 +94,10 @@ async def upload_personal_scene_narration(
     ensure_editable(video)
     length = request.headers.get("content-length")
     if length and (not length.isdigit() or int(length) > MAX_UPLOAD_BYTES):
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Audio recording exceeds 12 MB")
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Audio recording exceeds 3 MB")
     raw = await request.body()
     if not raw or len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Audio recording exceeds 12 MB")
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Audio recording exceeds 3 MB")
     result = await db.execute(
         select(Scene).where(Scene.id == scene_id, Scene.video_id == video.id).with_for_update()
     )
