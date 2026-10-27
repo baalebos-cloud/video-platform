@@ -262,6 +262,8 @@ function NewVideoForm() {
             Select only your own or authorized recordings. The recorded-voice option stores
             your private audio and never clones your identity; disclose AI narration where used.
           </p>
+          <VoiceProfileStudio language={language} profiles={voiceProfiles}
+            onRefresh={refreshVoiceProfiles} />
           {error && <p className="text-sm text-rose-300">{error}</p>}
 
           <button type="submit" disabled={submitting || !topic.trim()} className="studio-button mt-2 self-start">
