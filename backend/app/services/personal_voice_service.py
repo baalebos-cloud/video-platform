@@ -38,7 +38,7 @@ def normalize_recording(data: bytes, mime_type: str, max_seconds: float) -> tupl
     if mime_type.split(";", 1)[0].strip().lower() not in SUPPORTED_CONTENT_TYPES:
         raise PersonalVoiceError("Use a WAV, MP3, WebM, OGG or M4A audio recording")
     if not data or len(data) > MAX_UPLOAD_BYTES:
-        raise PersonalVoiceError("Recording must be non-empty and at most 12 MB")
+        raise PersonalVoiceError("Recording must be non-empty and at most 3 MB")
     if not 0.5 <= max_seconds <= MAX_SCENE_SECONDS:
         raise PersonalVoiceError("Invalid scene duration")
     try:
