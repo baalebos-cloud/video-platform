@@ -13,6 +13,9 @@ from app.api.deps import get_current_user
 from app.db.models.publishing import PublishingAccount, PublishedVideo, PublishStatus
 from app.db.models.user import User
 from app.db.models.video import Video, VideoStatus
+from app.db.models.scene import Scene
+from app.db.models.asset import Asset
+from sqlalchemy import select
 from app.db.session import get_db
 from app.security.permissions import require_video_owner
 from app.services.publishing_service import get_publishing_provider
@@ -46,6 +49,17 @@ async def publish_video(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Publishing account platform mismatch")
     if video.status != VideoStatus.READY or video.needs_rerender:
         raise HTTPException(status.HTTP_409_CONFLICT, "Render and review the latest video before publishing")
+    if (video.voice_preferences or {}).get("mode") == "recorded":
+        scenes = (await db.execute(select(Scene).where(Scene.video_id == video.id))).scalars().all()
+        audio_ids = [scene.audio_asset_id for scene in scenes]
+        assets = (await db.execute(select(Asset).where(Asset.id.in_(audio_ids)))).scalars().all()
+        by_id = {asset.id: asset for asset in assets}
+        if not scenes or any(
+            (by_id.get(scene.audio_asset_id) is None or
+             (by_id[scene.audio_asset_id].provider_metadata or {}).get("provider") != "personal_recording")
+            for scene in scenes
+        ):
+            raise HTTPException(409, "All personal narration scenes must be recorded and re-rendered before publishing")
     if platform != "mock" and not account.token_ciphertext:
         raise HTTPException(status.HTTP_409_CONFLICT, "Reconnect this account to authorize publishing")
     if platform == "mock" and get_settings().app_env == "production":
