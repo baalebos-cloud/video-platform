@@ -83,7 +83,7 @@ export function ClipTimingInspector({ videoId, scene, canEdit, onUpdated }: {
       Enter a duration between 0.5s and {maxDuration.toFixed(1)}s.
     </p>}
     <button type="button" className="mt-2 text-xs text-violet-300 hover:text-white"
-      disabled={!canEdit || saving || maxDuration <= scene.duration_seconds}
+      disabled={!canEdit || saving || (validDuration && Math.abs(parsed - maxDuration) < 0.001)}
       onClick={() => setDuration(String(maxDuration))}>
       Restore original length
     </button>
