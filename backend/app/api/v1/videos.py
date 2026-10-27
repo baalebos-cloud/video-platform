@@ -174,7 +174,7 @@ async def generate_video(
             platform=payload.platform,
             visual_style=payload.visual_style,
             creativity=payload.creativity,
-            voice_preferences=payload.voice.model_dump(),
+            voice_preferences=payload.voice.model_dump(mode="json"),
             caption_style=payload.caption_style,
             idempotency_key=key,
             input_hash=input_hash,
