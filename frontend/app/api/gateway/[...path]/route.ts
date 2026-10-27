@@ -56,6 +56,7 @@ async function handler(request: NextRequest, {params}: {params: {path: string[]}
   }
   const idempotency = request.headers.get("idempotency-key");
   const adminStepUp = request.headers.get("x-admin-authorization");
+  const voiceConsent = isNarrationUpload ? request.headers.get("x-voice-consent") : null;
   const forward = (token?: string, body = requestBody, url = target, method = request.method) => {
     const headers: Record<string, string> = {};
     if (contentType) headers["Content-Type"] = contentType;
