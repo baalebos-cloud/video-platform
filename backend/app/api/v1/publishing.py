@@ -46,7 +46,7 @@ async def publish_video(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Publishing account platform mismatch")
     if video.status != VideoStatus.READY or video.needs_rerender:
         raise HTTPException(status.HTTP_409_CONFLICT, "Render and review the latest video before publishing")
-    if (video.voice_preferences or {}).get("mode") == "recorded":
+    if (getattr(video, "voice_preferences", None) or {}).get("mode") == "recorded":
         from app.db.models.asset import Asset, AssetType
         from app.db.models.scene import Scene
         scene_rows = await db.execute(select(Scene).where(Scene.video_id == video.id))
