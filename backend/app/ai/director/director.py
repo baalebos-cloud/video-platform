@@ -208,25 +208,49 @@ async def create_plan(
         cta=cta,
     )
 
-    response = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
-
-    try:
-        raw = json.loads(response.text)
-        plan = VideoPlan.model_validate(normalize_video_plan_payload(raw))
-    except (json.JSONDecodeError, ValidationError) as exc:
-        # Pydantic error strings include the model's raw values, which may
-        # contain user-submitted content. Publish field names only.
-        paths = []
-        if isinstance(exc, ValidationError):
-            paths = [
-                ".".join(str(part) for part in issue["loc"])
-                for issue in exc.errors()
-            ]
-        logger.error("director.plan_validation_failed", invalid_fields=paths[:10])
-        fields = ", ".join(paths[:10]) if paths else "invalid JSON"
-        raise PlanValidationError(f"AI director returned an invalid plan; fields: {fields}") from None
-    validate_video_plan(plan)
-    validate_long_form_plan(plan, duration)
+    # Long-form outputs must meet a measurable speaking-time contract.
+    # Allow one extra Gemini planning attempt, *before* any image/TTS calls,
+    # rather than wasting a dozen media generations on a short storyboard.
+    # This does count as an additional free-tier text request if needed.
+    attempt_limit = 2 if duration >= 90 else 1
+    for attempt in range(attempt_limit):
+        response = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
+        try:
+            raw = json.loads(response.text)
+            plan = VideoPlan.model_validate(normalize_video_plan_payload(raw))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            paths = []
+            if isinstance(exc, ValidationError):
+                paths = [
+                    ".".join(str(part) for part in issue["loc"])
+                    for issue in exc.errors()
+                ]
+            logger.error("director.plan_validation_failed", invalid_fields=paths[:10])
+            fields = ", ".join(paths[:10]) if paths else "invalid JSON"
+            raise PlanValidationError(
+                f"AI director returned an invalid plan; fields: {fields}"
+            ) from None
+        validate_video_plan(plan)
+        try:
+            validate_long_form_plan(plan, duration)
+        except PlanValidationError as exc:
+            if attempt + 1 >= attempt_limit:
+                raise
+            logger.warning(
+                "director.long_form_replanning",
+                requested_seconds=duration,
+                completed_attempt=attempt + 1,
+                scene_count=len(plan.scenes),
+            )
+            user_prompt += (
+                "\\nYour previous answer failed the full-length constraint: "
+                + str(exc) + " Rewrite the entire structured plan. Include "
+                + "full, substantive spoken narration in each scene and keep "
+                + "the total scene duration near the exact requested runtime. "
+                + "Do not add silent or filler scenes.\\n"
+            )
+            continue
+        break
 
     metadata = {
         "prompt_version": PROMPT_VERSION,
