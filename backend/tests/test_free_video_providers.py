@@ -154,3 +154,24 @@ def test_stock_clip_ffmpeg_has_real_video_and_24fps(monkeypatch, tmp_path):
     assert "crop=1080:1920" in filters and "fps=24" in filters
     assert args[args.index("-c:v") + 1] == "libx264"
     assert args[args.index("-c:a") + 1] == "aac"
+
+
+def test_saved_stock_footage_is_reused_on_rerender():
+    import uuid
+    from app.db.models.asset import AssetType
+    from app.workers.tasks.rerender_task import make_asset_manifest
+
+    owner = uuid.uuid4()
+    image_id, audio_id = uuid.uuid4(), uuid.uuid4()
+    scene = SimpleNamespace(
+        id=uuid.uuid4(), visual_asset_id=image_id, audio_asset_id=audio_id,
+        duration_seconds=4.2, metadata_json={"stock_footage_key": "video/stock.mp4"},
+    )
+    assets = {
+        image_id: SimpleNamespace(id=image_id, owner_id=owner, type=AssetType.IMAGE,
+                                  storage_key="video/preview.png"),
+        audio_id: SimpleNamespace(id=audio_id, owner_id=owner, type=AssetType.AUDIO,
+                                  storage_key="video/speech.wav"),
+    }
+    manifest = make_asset_manifest([scene], assets, owner)
+    assert manifest[str(scene.id)]["video_key"] == "video/stock.mp4"
