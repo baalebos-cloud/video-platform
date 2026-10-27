@@ -465,7 +465,7 @@ export default function VideoEditorPage() {
             </div>)}
           </dl>
           {video?.needs_rerender && <p className="my-4 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-xs text-amber-200">
-            Your saved timeline changes are not yet in the existing MP4. Re-render to include them, or download the previous version.
+            Your saved timeline changes are not yet in the existing MP4. Re-render to include your changes before exporting.
           </p>}
           <div className="mt-6 flex flex-wrap justify-end gap-2">
             <button type="button" onClick={() => setExportOpen(false)} className="studio-button-secondary">Cancel</button>
@@ -473,9 +473,9 @@ export default function VideoEditorPage() {
               disabled={rerendering} onClick={() => void startRerender()}>
               {rerendering ? "Queueing…" : "Re-render edits"}
             </button>}
-            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading || pendingNarration > 0 || video?.needs_rerender || video?.status !== "ready"
+            <button type="button" className="studio-button" disabled={!video?.output_asset_id || downloading || pendingNarration > 0 || video?.needs_rerender || video?.status !== "ready"}
               onClick={() => void downloadVideo()}>
-              <StudioIcon name="download" size={16}/> {downloading ? "Preparing…" : video?.needs_rerender ? "Download previous MP4" : "Download MP4"}
+              <StudioIcon name="download" size={16}/> {downloading ? "Preparing…" : "Download MP4"}
             </button>
           </div>
         </section>
