@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export type StudioIconName =
   | "dashboard" | "film" | "chart" | "wallet" | "settings" | "plus"
-  | "play" | "sparkles" | "layers" | "captions" | "arrow" | "back"
+  | "play" | "pause" | "sparkles" | "layers" | "captions" | "arrow" | "back"
   | "logout" | "folder" | "chevron" | "clock" | "refresh" | "download"
   | "check" | "menu" | "eye" | "audio" | "edit" | "wand" | "search";
 
@@ -14,6 +14,7 @@ const shapes: Record<StudioIconName, ReactNode> = {
   settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15l1.2 1.1-2 3.4-1.6-.5a8 8 0 0 1-2.3 1.3L14.3 22h-4.6l-.4-1.7A8 8 0 0 1 7 19l-1.6.5-2-3.4L4.6 15a8 8 0 0 1 0-2l-1.2-1.1 2-3.4L7 9a8 8 0 0 1 2.3-1.3L9.7 6h4.6l.4 1.7A8 8 0 0 1 17 9l1.6-.5 2 3.4L19.4 13a8 8 0 0 1 0 2Z" transform="translate(0 -2) scale(1 1.05)" /></>,
   plus: <path d="M12 5v14M5 12h14" strokeLinecap="round" />,
   play: <path d="m8 5 11 7-11 7V5Z" strokeLinejoin="round" />,
+  pause: <><path d="M8 5v14M16 5v14" strokeWidth={3} /></>,
   sparkles: <><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 18l.6 1.4L21 20l-1.4.6L19 22l-.6-1.4L17 20l1.4-.6L19 18Z" /></>,
   layers: <><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5" strokeLinejoin="round" /></>,
   captions: <><rect x="2" y="4" width="20" height="16" rx="3" /><path d="M9 10a3 3 0 1 0 0 4m10-4a3 3 0 1 0 0 4" /></>,

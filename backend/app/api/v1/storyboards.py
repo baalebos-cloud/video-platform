@@ -54,6 +54,60 @@ async def get_storyboard(video_id: uuid.UUID, user: User = Depends(get_current_u
     ]
 
 
+class SceneOrderUpdate(BaseModel):
+    scene_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+
+
+def apply_scene_order(scenes: list[Scene], ids: list[uuid.UUID]) -> bool:
+    """Validate an exact permutation before mutating any scene.
+
+    Reorder keeps scene audio, stock footage, captions and saved assets bound
+    to the original scene ID. It only changes playback order.
+    """
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Duplicate scene IDs")
+    current_ids = {scene.id for scene in scenes}
+    if len(ids) != len(scenes) or set(ids) != current_ids:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Scene order must include every scene belonging to this video exactly once",
+        )
+    ordered = sorted(scenes, key=lambda scene: scene.sequence)
+    if [scene.id for scene in ordered] == ids:
+        return False
+    by_id = {scene.id: scene for scene in scenes}
+    for sequence, scene_id in enumerate(ids, start=1):
+        by_id[scene_id].sequence = sequence
+    return True
+
+
+@router.patch("/{video_id}/storyboard/order")
+async def update_scene_order(
+    video_id: uuid.UUID,
+    payload: SceneOrderUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist clip reordering for the FFmpeg renderer and subtitle timeline."""
+    video = await require_video_owner(db, video_id, user.id)
+    await db.refresh(video, with_for_update=True)
+    ensure_editable(video)
+    result = await db.execute(
+        select(Scene).where(Scene.video_id == video.id).order_by(Scene.sequence).with_for_update()
+    )
+    scenes = list(result.scalars().all())
+    changed = apply_scene_order(scenes, payload.scene_ids)
+    if changed:
+        video.needs_rerender = True
+        await db.commit()
+    return {
+        "video_id": str(video.id),
+        "scene_ids": [str(scene_id) for scene_id in payload.scene_ids],
+        "changed": changed,
+        "needs_rerender": video.needs_rerender,
+    }
+
+
 @router.patch("/{video_id}/storyboard/scenes/{scene_id}")
 async def update_scene_prompt(
     video_id: uuid.UUID,

@@ -14,8 +14,8 @@ const MAIN_NAV: { href: string; label: string; icon: StudioIconName }[] = [
   { href: "/dashboard/settings", label: "Settings", icon: "settings" },
 ];
 
-export function DashboardShell({ children, wide = false }: {
-  children: React.ReactNode; wide?: boolean;
+export function DashboardShell({ children, wide = false, editorMode = false }: {
+  children: React.ReactNode; wide?: boolean; editorMode?: boolean;
 }) {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
@@ -51,7 +51,7 @@ export function DashboardShell({ children, wide = false }: {
 
   return (
     <div className="flex min-h-screen bg-[#0b0d16] text-[#ecedf7]">
-      <aside className="sticky top-0 hidden h-screen w-[246px] shrink-0 flex-col border-r border-white/[0.07] bg-[#11131f] px-4 py-7 lg:flex">
+      <aside className={`sticky top-0 hidden h-screen w-[246px] shrink-0 flex-col border-r border-white/[0.07] bg-[#11131f] px-4 py-7 ${editorMode ? "" : "lg:flex"}`}>
         <Link href="/dashboard" className="mb-12 flex items-center gap-3 px-2">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-600/20">
             <StudioIcon name="sparkles" size={22} />
@@ -100,7 +100,7 @@ export function DashboardShell({ children, wide = false }: {
             <StudioIcon name="logout" size={17} /> Sign out
           </button>
         </div>}
-        <main className={`mx-auto w-full ${wide ? "max-w-[1760px]" : "max-w-[1480px]"} px-4 py-7 sm:px-7 sm:py-9 lg:px-10`}>
+        <main className={`mx-auto w-full ${editorMode ? "max-w-[2100px] px-3 py-4 sm:px-5" : `${wide ? "max-w-[1760px]" : "max-w-[1480px]"} px-4 py-7 sm:px-7 sm:py-9 lg:px-10`}`}>
           {children}
         </main>
       </div>
