@@ -31,7 +31,10 @@ def empty_narration(seconds: float = 0.5) -> bytes:
     return buffer.getvalue()
 
 
-def normalize_recording(\n    data: bytes, mime_type: str, max_seconds: float,\n    *, trim_start: float = 0.0, trim_end: float | None = None,\n) -> tuple[bytes, float]:
+def normalize_recording(
+    data: bytes, mime_type: str, max_seconds: float,
+    *, trim_start: float = 0.0, trim_end: float | None = None,
+) -> tuple[bytes, float]:
     """Decode a browser or uploaded recording to safe mono 24k PCM WAV.
 
     Reject overlong voice clips rather than quietly chopping off the speaker.
