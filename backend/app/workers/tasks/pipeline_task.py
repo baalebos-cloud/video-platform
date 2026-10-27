@@ -13,6 +13,7 @@ import uuid
 
 from app.ai.director.director import PlanValidationError
 from app.ai.providers.openai_http import MediaProviderError
+from app.ai.providers.cloudflare_http import CloudflareRequestError
 from app.config.logging import get_logger
 from app.config.settings import get_settings
 from app.config.release import current_release
@@ -68,6 +69,39 @@ def provider_failure_details(stage: str, exc: MediaProviderError) -> tuple[str, 
 
     Never forward raw third-party response bodies, exception headers or tokens.
     """
+    if isinstance(exc, CloudflareRequestError):
+        labels = {
+            "missing_credentials": (
+                "media_cloudflare_missing_credentials",
+                "Cloudflare Workers AI credentials are missing on the Railway worker.",
+            ),
+            "invalid_account_id": (
+                "media_cloudflare_account",
+                "Cloudflare Workers AI account ID format is invalid. Copy the 32-character Account ID, not the API token.",
+            ),
+            "invalid_token_format": (
+                "media_cloudflare_token",
+                "Cloudflare Workers AI API token contains invalid formatting. Check the Railway secret without sharing it.",
+            ),
+            "invalid_model": (
+                "media_cloudflare_model",
+                "Cloudflare model ID is invalid. Check CLOUDFLARE_TTS_MODEL and CLOUDFLARE_IMAGE_MODEL.",
+            ),
+            "invalid_client_request": (
+                "media_cloudflare_request",
+                "Cloudflare request could not be constructed. Verify the worker's Cloudflare configuration.",
+            ),
+            "connection_failed": (
+                "media_cloudflare_connection",
+                "Cloudflare connection failed before a response. Check worker outbound networking and Cloudflare status.",
+            ),
+            "request_timeout": (
+                "media_cloudflare_timeout",
+                "Cloudflare request timed out. Retry when provider connectivity recovers.",
+            ),
+        }
+        code, detail = labels[exc.reason]
+        return (code, detail, None)
     if isinstance(exc, MediaGuardError):
         if exc.reason == "daily_quota_exceeded":
             return (
