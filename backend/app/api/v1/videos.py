@@ -98,6 +98,7 @@ class VideoStatusResponse(BaseModel):
     language: str | None = None
     duration_seconds: int | None = None
     needs_rerender: bool = False
+    voice_mode: str = "auto"
 
     class Config:
         from_attributes = True
@@ -113,10 +114,13 @@ async def generate_video(
 ) -> GenerateVideoResponse:
     settings = get_settings()
     if settings.app_env == "production":
-        if settings.image_provider == "mock" or settings.voice_provider == "mock" or settings.llm_provider == "mock":
+        needs_external_tts = payload.voice.mode == "auto"
+        if (settings.image_provider == "mock" or settings.llm_provider == "mock"
+                or (needs_external_tts and settings.voice_provider == "mock")):
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
-                "Production video generation needs real AI planning, image and voice providers; configure the Railway worker and API.",
+                "Production requires real AI planning and image providers; "
+                "the automatic narrator also requires a real TTS provider.",
             )
         if settings.llm_provider == "baalebos_ai" and not settings.llm_gateway_url:
             raise HTTPException(
@@ -227,6 +231,7 @@ async def get_video_status(
         language=video.language,
         duration_seconds=video.duration_seconds,
         needs_rerender=video.needs_rerender,
+        voice_mode=(video.voice_preferences or {}).get("mode", "auto"),
     )
 
 
