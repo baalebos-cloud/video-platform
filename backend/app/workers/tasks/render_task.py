@@ -43,11 +43,19 @@ def _render_sync(video: Video, scenes: list[Scene], scene_assets: dict[str, dict
             image_path.write_bytes(image_bytes)
             audio_path.write_bytes(audio_bytes)
 
-            render_service.render_scene_clip(
-                image_path, audio_path, duration, clip_path,
-                aspect_ratio=video.aspect_ratio,
-                cinematic_motion=video.visual_style == "cinematic_realistic",
-            )
+            if assets.get("video_key"):
+                video_path = tmp_path / f"footage_{scene.sequence}.mp4"
+                video_path.write_bytes(storage_service.get_object_bytes(assets["video_key"]))
+                render_service.render_stock_clip(
+                    video_path, audio_path, duration, clip_path,
+                    aspect_ratio=video.aspect_ratio,
+                )
+            else:
+                render_service.render_scene_clip(
+                    image_path, audio_path, duration, clip_path,
+                    aspect_ratio=video.aspect_ratio,
+                    cinematic_motion=video.visual_style == "cinematic_realistic",
+                )
             clip_paths.append(clip_path)
             # The caption edit is scoped to its own scene; timings remain an
             # approximation of narration duration until ASR alignment ships.
