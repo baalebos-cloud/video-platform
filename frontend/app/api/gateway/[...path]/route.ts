@@ -44,25 +44,35 @@ async function handler(request: NextRequest, {params}: {params: {path: string[]}
   const contentType = request.headers.get("content-type");
   const isNarrationUpload = path.startsWith("videos/") && path.includes("/storyboard/scenes/") && path.endsWith("/narration")
     && request.method === "POST";
-  if (isNarrationUpload && (!contentType?.toLowerCase().startsWith("audio/")
+  const isProfileUpload = path === "voice-profiles" && request.method === "POST";
+  const isAudioUpload = isNarrationUpload || isProfileUpload;
+  if (isAudioUpload && (!contentType?.toLowerCase().startsWith("audio/")
     || Number(request.headers.get("content-length") || "0") > 3 * 1024 * 1024)) {
     return NextResponse.json({detail: "Voice upload must be an audio file under 3 MB"}, {status: 413});
   }
   // Avoid request.text() on binary WebM/MP3/WAV data. It destroys audio.
   const requestBody = ["GET", "HEAD"].includes(request.method)
-    ? undefined : isNarrationUpload ? await request.arrayBuffer() : await request.text();
-  if (isNarrationUpload && requestBody instanceof ArrayBuffer && requestBody.byteLength > 3 * 1024 * 1024) {
+    ? undefined : isAudioUpload ? await request.arrayBuffer() : await request.text();
+  if (isAudioUpload && requestBody instanceof ArrayBuffer && requestBody.byteLength > 3 * 1024 * 1024) {
     return NextResponse.json({detail: "Voice upload exceeds 3 MB"}, {status: 413});
   }
   const idempotency = request.headers.get("idempotency-key");
   const adminStepUp = request.headers.get("x-admin-authorization");
-  const voiceConsent = isNarrationUpload ? request.headers.get("x-voice-consent") : null;
+  const voiceConsent = isAudioUpload ? request.headers.get("x-voice-consent") : null;
+  const voiceName = isProfileUpload ? request.headers.get("x-voice-name") : null;
+  const voiceLanguage = isProfileUpload ? request.headers.get("x-voice-language") : null;
+  const trimStart = isNarrationUpload ? request.headers.get("x-voice-trim-start") : null;
+  const trimEnd = isNarrationUpload ? request.headers.get("x-voice-trim-end") : null;
   const forward = (token?: string, body = requestBody, url = target, method = request.method) => {
     const headers: Record<string, string> = {};
     if (contentType) headers["Content-Type"] = contentType;
     if (idempotency) headers["Idempotency-Key"] = idempotency;
     if (adminStepUp) headers["X-Admin-Authorization"] = adminStepUp;
     if (voiceConsent) headers["X-Voice-Consent"] = voiceConsent;
+    if (voiceName) headers["X-Voice-Name"] = voiceName;
+    if (voiceLanguage) headers["X-Voice-Language"] = voiceLanguage;
+    if (trimStart) headers["X-Voice-Trim-Start"] = trimStart;
+    if (trimEnd) headers["X-Voice-Trim-End"] = trimEnd;
     if (token) headers.Authorization = `Bearer ${token}`;
     return fetch(url, {method, headers, body, cache: "no-store", redirect: "manual"});
   };
