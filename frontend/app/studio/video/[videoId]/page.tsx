@@ -333,7 +333,11 @@ export default function VideoEditorPage() {
                 <p className="font-semibold text-white">Cinematic motion</p>
                 <p className="mt-2">Your renderer supports restrained motion on generated still images. Stock footage uses its original movement.</p>
               </div>
-              <p className="text-[#8d93af]">Custom filters, transitions and keyframes require renderer support. They are not applied by this editor yet.</p>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="mb-1 font-semibold text-white">Fade transitions</p>
+                <p>Choose a scene, then open Clip → Trim & transition to apply a 0.25-second fade through black with an audio fade.</p>
+              </div>
+              <p className="text-[#8d93af]">Custom keyframes, layered effects and arbitrary filter presets are not yet supported by the renderer.</p>
             </div>}
           </div>
         </aside>
@@ -398,7 +402,13 @@ export default function VideoEditorPage() {
           </div>
           <div className="max-h-[590px] overflow-y-auto p-4">
             {inspector === "scene" ? <>
-              <SceneInspector videoId={params.videoId} scene={selected} canEdit={canEdit} onUpdated={refreshAll}/>
+              <SceneInspector videoId={params.videoId} scene={selected} canEdit={canEdit}
+                onUpdated={async () => {
+                  await refreshAll();
+                  videoRef.current?.pause();
+                  setPreviewMode("scene");
+                  setPlayhead(0);
+                }}/>
               {selected && <div className="mt-5 border-t border-white/10 pt-5">
                 <p className="studio-eyebrow mb-3">Clip order</p>
                 <div className="flex gap-2">

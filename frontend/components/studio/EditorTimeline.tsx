@@ -6,7 +6,6 @@ import { timeLabel } from "@/components/studio/CaptionPanel";
 import { useSignedMedia } from "@/hooks/useSignedMedia";
 import type { CaptionTrack, StoryboardScene } from "@/types";
 
-const LABEL_WIDTH = 118;
 const MIN_TIMELINE_WIDTH = 650;
 
 type TimelineItem = StoryboardScene & { start: number; end: number };
@@ -179,6 +178,13 @@ export function EditorTimeline({
                         <span className="min-w-0 flex-1 px-1">
                           <span className="block truncate text-[11px] font-bold text-white">Scene {item.sequence}</span>
                           <span className="block text-[10px] text-[#a4c6cb]">{item.duration_seconds.toFixed(1)}s</span>
+                          {(item.duration_seconds < item.max_duration_seconds - 0.01 || item.transition_in === "fade_black") &&
+                            <span className="block truncate text-[9px] text-[#e4cf95]">
+                              {[
+                                item.duration_seconds < item.max_duration_seconds - 0.01 ? "Trimmed" : null,
+                                item.sequence > 1 && item.transition_in === "fade_black" ? "Fade" : null,
+                              ].filter(Boolean).join(" · ")}
+                            </span>}
                         </span>
                       </button>
                     ) : (

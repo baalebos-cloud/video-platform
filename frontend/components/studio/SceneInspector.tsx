@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api/client";
 import { StudioIcon } from "@/components/ui/StudioIcon";
+import { ClipTimingInspector } from "@/components/studio/ClipTimingInspector";
 import type { StoryboardScene } from "@/types";
 
 export function SceneInspector({ videoId, scene, canEdit, onUpdated }: {
@@ -69,6 +70,8 @@ export function SceneInspector({ videoId, scene, canEdit, onUpdated }: {
       <h3 className="text-lg font-semibold">Scene {scene.sequence}</h3>
       <p className="mt-1 text-xs text-[#999fb8]">{scene.duration_seconds.toFixed(1)} seconds · Generated scene</p>
     </div>
+    <ClipTimingInspector videoId={videoId} scene={scene}
+      canEdit={canEdit} onUpdated={onUpdated}/>
     <div className="border-t border-white/10 pt-5">
       <p className="studio-eyebrow mb-2">Narration</p>
       <p className="rounded-xl bg-[#111320] p-4 text-sm leading-relaxed text-[#c6cada]">{scene.narration || "No narration supplied."}</p>

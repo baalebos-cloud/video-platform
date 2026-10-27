@@ -69,6 +69,8 @@ export interface StoryboardScene {
   narration: string;
   visual_prompt: string;
   duration_seconds: number;
+  max_duration_seconds: number;
+  transition_in: "cut" | "fade_black";
   visual_asset_id: string | null;
   on_screen_text: string | null;
 }

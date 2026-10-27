@@ -31,9 +31,26 @@ def _run(cmd: list[str]) -> None:
         raise RenderError(result.stderr[-2000:])
 
 
+def scene_fade_filters(
+    video_filters: str, duration_seconds: float, *, fade_in: bool, fade_out: bool,
+) -> tuple[str, str]:
+    """Hard-cut or true fade through black; no free-form FFmpeg input from users."""
+    audio_filters = "apad"
+    fade_seconds = min(0.25, duration_seconds / 2)
+    if fade_in:
+        video_filters += f",fade=t=in:st=0:d={fade_seconds:.3f}"
+        audio_filters += f",afade=t=in:st=0:d={fade_seconds:.3f}"
+    if fade_out:
+        fade_start = max(0.0, duration_seconds - fade_seconds)
+        video_filters += f",fade=t=out:st={fade_start:.3f}:d={fade_seconds:.3f}"
+        audio_filters += f",afade=t=out:st={fade_start:.3f}:d={fade_seconds:.3f}"
+    return video_filters, audio_filters
+
+
 def render_scene_clip(
     image_path: Path, audio_path: Path, duration_seconds: float, output_path: Path,
     *, aspect_ratio: str = "9:16", cinematic_motion: bool = False,
+    fade_in: bool = False, fade_out: bool = False,
 ) -> None:
     """Render a full-bleed H.264/AAC scene; optionally add subtle photo motion."""
     if aspect_ratio not in {"9:16", "16:9", "1:1"}:
@@ -51,11 +68,14 @@ def render_scene_clip(
             f":d=1:s={width}x{height}:fps=24"
         )
     filters += ",setsar=1,format=yuv420p"
+    filters, audio_filters = scene_fade_filters(
+        filters, duration_seconds, fade_in=fade_in, fade_out=fade_out,
+    )
     _run([
         "ffmpeg", "-y", "-framerate", "24", "-loop", "1", "-i", str(image_path),
         "-i", str(audio_path),
         "-vf", filters, "-r", "24", "-t", str(duration_seconds),
-        "-af", "apad",
+        "-af", audio_filters,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-profile:v", "high", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
@@ -109,6 +129,7 @@ def generate_thumbnail(video_path: Path, output_path: Path, at_seconds: float = 
 def render_stock_clip(
     footage_path: Path, audio_path: Path, duration_seconds: float,
     output_path: Path, *, aspect_ratio: str = "9:16",
+    fade_in: bool = False, fade_out: bool = False,
 ) -> None:
     """Render real licensed footage (repeated if short), cropped for the destination platform."""
     if aspect_ratio not in {"9:16", "16:9", "1:1"}:
@@ -120,10 +141,13 @@ def render_stock_clip(
         f"scale={width}:{height}:force_original_aspect_ratio=increase,"
         f"crop={width}:{height},fps=24,setsar=1,format=yuv420p"
     )
+    filters, audio_filters = scene_fade_filters(
+        filters, duration_seconds, fade_in=fade_in, fade_out=fade_out,
+    )
     _run([
         "ffmpeg", "-y", "-stream_loop", "-1", "-i", str(footage_path),
         "-i", str(audio_path), "-map", "0:v:0", "-map", "1:a:0",
-        "-vf", filters, "-af", "apad", "-t", str(duration_seconds),
+        "-vf", filters, "-af", audio_filters, "-t", str(duration_seconds),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
         "-profile:v", "high", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",

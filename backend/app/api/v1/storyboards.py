@@ -3,7 +3,9 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing import Literal
+import math
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,11 +49,105 @@ async def get_storyboard(video_id: uuid.UUID, user: User = Depends(get_current_u
             "narration": s.narration,
             "visual_prompt": s.visual_prompt,
             "duration_seconds": s.duration_seconds,
+            "max_duration_seconds": original_scene_duration(s),
+            "transition_in": scene_transition(s),
             "visual_asset_id": str(s.visual_asset_id) if s.visual_asset_id else None,
             "on_screen_text": s.on_screen_text,
         }
         for s in result.scalars().all()
     ]
+
+
+EDITOR_MIN_DURATION = 0.5
+EDITOR_MAX_DURATION = 60.0
+EDITOR_TRANSITIONS = {"cut", "fade_black"}
+
+
+def original_scene_duration(scene: Scene) -> float:
+    """The initial rendered duration is the upper trim bound, not a new asset."""
+    meta = scene.metadata_json or {}
+    stored = meta.get("editor_original_duration_seconds")
+    try:
+        original = float(stored) if stored is not None else float(scene.duration_seconds)
+    except (TypeError, ValueError, OverflowError):
+        return float(scene.duration_seconds)
+    if not math.isfinite(original) or original <= 0:
+        return float(scene.duration_seconds)
+    return original
+
+
+def scene_transition(scene: Scene) -> str:
+    transition = (scene.metadata_json or {}).get("editor_transition_in", "cut")
+    return transition if transition in EDITOR_TRANSITIONS else "cut"
+
+
+class SceneEditUpdate(BaseModel):
+    duration_seconds: float | None = Field(default=None, ge=EDITOR_MIN_DURATION, le=EDITOR_MAX_DURATION)
+    transition_in: Literal["cut", "fade_black"] | None = None
+
+    @model_validator(mode="after")
+    def check_has_changes(self):
+        if self.duration_seconds is None and self.transition_in is None:
+            raise ValueError("Specify duration_seconds or transition_in")
+        if self.duration_seconds is not None and not math.isfinite(self.duration_seconds):
+            raise ValueError("Clip duration must be finite")
+        return self
+
+
+def apply_scene_edit(scene: Scene, payload: SceneEditUpdate) -> bool:
+    """Adjust playback only: existing image, stock video and WAV stay untouched."""
+    meta = dict(scene.metadata_json or {})
+    changed = False
+    if payload.duration_seconds is not None:
+        original = original_scene_duration(scene)
+        if payload.duration_seconds > original + 0.0001:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Cannot extend a clip beyond its original media duration",
+            )
+        duration = round(payload.duration_seconds, 2)
+        if duration != round(float(scene.duration_seconds), 2):
+            meta.setdefault("editor_original_duration_seconds", original)
+            scene.duration_seconds = duration
+            changed = True
+    if payload.transition_in is not None and payload.transition_in != scene_transition(scene):
+        meta["editor_transition_in"] = payload.transition_in
+        changed = True
+    if changed:
+        scene.metadata_json = meta
+    return changed
+
+
+@router.patch("/{video_id}/storyboard/scenes/{scene_id}/edit")
+async def edit_scene_timeline(
+    video_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneEditUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Owner-only clip trim and transition settings, serialized with re-render."""
+    video = await require_video_owner(db, video_id, user.id)
+    await db.refresh(video, with_for_update=True)
+    ensure_editable(video)
+    result = await db.execute(
+        select(Scene).where(Scene.video_id == video.id, Scene.id == scene_id).with_for_update()
+    )
+    scene = result.scalar_one_or_none()
+    if scene is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Scene not found for this video")
+    changed = apply_scene_edit(scene, payload)
+    if changed:
+        video.needs_rerender = True
+        await db.commit()
+    return {
+        "scene_id": str(scene.id),
+        "duration_seconds": scene.duration_seconds,
+        "max_duration_seconds": original_scene_duration(scene),
+        "transition_in": scene_transition(scene),
+        "needs_rerender": video.needs_rerender,
+        "changed": changed,
+    }
 
 
 class SceneOrderUpdate(BaseModel):
