@@ -136,7 +136,7 @@ export function PersonalNarrationPanel({ videoId, scene, canEdit, onUpdated }: {
     <label className="flex items-start gap-2 text-[11px] leading-relaxed text-[#b7bed7]">
       <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)}
         className="mt-0.5 accent-violet-400"/>
-      I am recording my own voice, or I have the speaker's permission to use this recording.
+      I am recording my own voice, or I have the speaker&apos;s permission to use this recording.
     </label>
     <div className="flex flex-wrap gap-2">
       {recording ? <button type="button" onClick={stopRecording}
