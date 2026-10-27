@@ -4,7 +4,7 @@ import subprocess
 import uuid
 import wave
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -116,6 +116,9 @@ async def test_upload_is_owned_and_marks_video_for_rerender_without_tts():
     video = SimpleNamespace(id=video_id, status=VideoStatus.READY, needs_rerender=False)
     scene = SimpleNamespace(id=scene_id, video_id=video_id, duration_seconds=10.0, audio_asset_id=None)
     db = AsyncMock()
+    # SQLAlchemy assigns a generated UUID on flush; emulate this without
+    # a real PostgreSQL roundtrip in the route unit test.
+    db.add = MagicMock(side_effect=lambda item: setattr(item, "id", uuid.uuid4()))
     db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: scene)
     user = SimpleNamespace(id=user_id)
     with patch.object(storyboards, "require_video_owner", new_callable=AsyncMock, return_value=video), \
