@@ -8,7 +8,7 @@ import json
 
 from pydantic import ValidationError
 
-from app.ai.prompts.video_director_v3 import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
+from app.ai.prompts.video_director_v4 import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
 from app.ai.providers.registry import select_provider
 from app.ai.schemas.video_plan import VideoPlan
 from app.config.logging import get_logger
@@ -161,12 +161,15 @@ def validate_long_form_plan(plan: VideoPlan, requested_seconds: int) -> None:
             "AI director planned scene durations do not cover the requested runtime."
         )
     narration_words = sum(len(scene.narration.split()) for scene in plan.scenes)
-    minimum_words = math.ceil(requested_seconds * 2.1)
+    # Natural documentary narration varies by topic and delivery. The old
+    # fixed threshold of 126 WPM rejected a genuine 327-word/180-second plan
+    # (109 WPM). Reserve retries for severely under-written drafts instead.
+    minimum_words = math.ceil(requested_seconds * 100 / 60)
     if narration_words < minimum_words:
         raise PlanValidationError(
             f"AI director produced too little spoken narration for {requested_seconds}s "
-            f"({narration_words} words; minimum {minimum_words}). "
-            "Try another generation to obtain a complete full-length script."
+            f"({narration_words} words; minimum {minimum_words} at 100 words/minute). "
+            "A fuller script is required before media generation."
         )
     if any(len(scene.narration) > 2800 for scene in plan.scenes):
         raise PlanValidationError("Scene narration exceeds the safe text-to-speech input length.")
@@ -242,12 +245,15 @@ async def create_plan(
                 completed_attempt=attempt + 1,
                 scene_count=len(plan.scenes),
             )
+            # Keep the original topic and requested runtime in the retry.
+            # An explicit revision request is more useful than repeating the
+            # same numerical minimum without context.
             user_prompt += (
-                "\\nYour previous answer failed the full-length constraint: "
-                + str(exc) + " Rewrite the entire structured plan. Include "
-                + "full, substantive spoken narration in each scene and keep "
-                + "the total scene duration near the exact requested runtime. "
-                + "Do not add silent or filler scenes.\\n"
+                "\nREVISION REQUIRED: The previous draft is too short to "
+                "narrate the full video. " + str(exc)
+                + " Preserve the intended topic, add relevant factual "
+                "explanations and examples, and revise the scenes as needed. "
+                "Match scene durations to real spoken narration, not silence.\n"
             )
             continue
         break
@@ -258,5 +264,12 @@ async def create_plan(
         "llm_provider": response.provider,
         "llm_model": response.model,
     }
-    logger.info("director.plan_created", title=plan.title, scenes=len(plan.scenes))
+    logger.info(
+        "director.plan_created",
+        title=plan.title,
+        scenes=len(plan.scenes),
+        duration_requested=duration,
+        narration_words=sum(len(scene.narration.split()) for scene in plan.scenes),
+        planned_duration_seconds=round(sum(scene.duration_seconds for scene in plan.scenes), 2),
+    )
     return plan, metadata
