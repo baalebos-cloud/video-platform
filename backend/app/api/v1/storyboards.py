@@ -70,6 +70,9 @@ async def update_scene_prompt(
     if len(prompt) < 3:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Visual prompt is too short")
     scene.visual_prompt = prompt
+    # A changed prompt must not silently re-use the old stock footage.
+    scene.metadata_json = {k: v for k, v in (scene.metadata_json or {}).items()
+                           if k not in ("stock_footage_key", "stock_source_url")}
     await db.commit()
     return {"scene_id": str(scene.id), "visual_prompt": scene.visual_prompt}
 
@@ -137,6 +140,8 @@ async def regenerate_scene(
     db.add(asset)
     await db.flush()
     scene.visual_asset_id = asset.id
+    scene.metadata_json = {k: v for k, v in (scene.metadata_json or {}).items()
+                           if k not in ("stock_footage_key", "stock_source_url")}
     video.needs_rerender = True
     await db.commit()
     return {"scene_id": str(scene.id), "visual_asset_id": str(asset.id)}
