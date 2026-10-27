@@ -30,7 +30,7 @@ def empty_narration(seconds: float = 0.5) -> bytes:
     return buffer.getvalue()
 
 
-def normalize_recording(data: bytes, mime_type: str, max_seconds: float) -> tuple[bytes, float]:
+def normalize_recording(data: bytes, mime_type: str, max_seconds: float, *, trim_start: float = 0, trim_end: float | None = None) -> tuple[bytes, float]:
     """Decode a browser or uploaded recording to safe mono 24k PCM WAV.
 
     Reject overlong voice clips rather than quietly chopping off the speaker.
@@ -41,6 +41,10 @@ def normalize_recording(data: bytes, mime_type: str, max_seconds: float) -> tupl
         raise PersonalVoiceError("Recording must be non-empty and at most 3 MB")
     if not 0.5 <= max_seconds <= MAX_SCENE_SECONDS:
         raise PersonalVoiceError("Invalid scene duration")
+    if not 0 <= trim_start <= MAX_SCENE_SECONDS:
+        raise PersonalVoiceError("Invalid trim start")
+    if trim_end is not None and not trim_start + 0.4 <= trim_end <= MAX_SCENE_SECONDS + 2:
+        raise PersonalVoiceError("Invalid trim end")
     try:
         proc = subprocess.run(
             ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
@@ -52,6 +56,12 @@ def normalize_recording(data: bytes, mime_type: str, max_seconds: float) -> tupl
     except (subprocess.SubprocessError, OSError):
         raise PersonalVoiceError("Audio could not be decoded") from None
     pcm = proc.stdout
+    # Cut decoded mono PCM at 24 kHz. No unrequested silence or tempo change.
+    start_byte = round(trim_start * 24000) * 2
+    end_byte = round(trim_end * 24000) * 2 if trim_end is not None else len(pcm)
+    if start_byte >= len(pcm) or end_byte > len(pcm) + 2400:
+        raise PersonalVoiceError("Trim range exceeds the recorded audio")
+    pcm = pcm[start_byte:min(end_byte, len(pcm))]
     duration = len(pcm) / (24000 * 2)
     if not 0.4 <= duration <= max_seconds + 0.25:
         raise PersonalVoiceError(
