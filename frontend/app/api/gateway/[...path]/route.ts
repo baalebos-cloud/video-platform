@@ -62,6 +62,7 @@ async function handler(request: NextRequest, {params}: {params: {path: string[]}
     if (contentType) headers["Content-Type"] = contentType;
     if (idempotency) headers["Idempotency-Key"] = idempotency;
     if (adminStepUp) headers["X-Admin-Authorization"] = adminStepUp;
+    if (voiceConsent) headers["X-Voice-Consent"] = voiceConsent;
     if (token) headers.Authorization = `Bearer ${token}`;
     return fetch(url, {method, headers, body, cache: "no-store", redirect: "manual"});
   };
