@@ -65,7 +65,7 @@ def require_live_output_providers(
         or plan_metadata.get("llm_provider") == "mock"
     ):
         raise PlanValidationError(
-            "Production needs real planning and image providers. "
+            "Production media providers need real planning and image providers. "
             "Automatic narration also needs a real TTS provider."
         )
 
