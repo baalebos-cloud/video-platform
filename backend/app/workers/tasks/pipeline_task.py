@@ -66,7 +66,7 @@ def provider_failure_details(stage: str, exc: MediaProviderError) -> tuple[str, 
 
     Never forward raw third-party response bodies, exception headers or tokens.
     """
-    match = re.search(r"\\bHTTP (400|401|403|404|408|429|500|502|503|504)\\b", str(exc))
+    match = re.search(r"\bHTTP (400|401|403|404|408|429|500|502|503|504)\b", str(exc))
     http_status = int(match.group(1)) if match else None
     planning = stage == "planning"
     scope = "planning" if planning else "media"
