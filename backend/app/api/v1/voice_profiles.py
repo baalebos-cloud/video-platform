@@ -46,14 +46,13 @@ def profile_public(asset: Asset) -> dict:
 
 @router.get("/capabilities")
 async def capabilities(user: User = Depends(get_current_user)):
-    settings = get_settings()
-    # Never describe a provider as available if it lacks credentials or
-    # the explicit commercial license/operational approval flag.
-    enabled = bool(
-        settings.voice_clone_license_confirmed
-        and settings.voice_clone_api_url
-        and settings.voice_clone_api_token
-    )
+    from app.services.voice_clone_service import VoiceCloneUnavailable, configured_clone_url
+    try:
+        configured_clone_url()
+    except VoiceCloneUnavailable:
+        enabled = False
+    else:
+        enabled = True
     return {
         "personal_recordings": True,
         "reference_profiles": True,
