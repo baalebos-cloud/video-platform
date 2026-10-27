@@ -32,6 +32,10 @@ async def get_asset(
     asset = await db.get(Asset, asset_id)
     if asset is None or asset.owner_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
+    if (asset.provider_metadata or {}).get("purpose") == "voice_profile" and (
+        (asset.provider_metadata or {}).get("revoked") is True
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     if download:
         if asset.type != AssetType.FINAL_VIDEO:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only completed videos can be downloaded as MP4")
