@@ -195,7 +195,9 @@ export function EditorTimeline({
                         <span className="block truncate text-[#e4e7ef]">
                           {track.id === "captions"
                             ? captions?.style === "none" ? "(Hidden)" : cueById.get(item.id) || "(Empty)"
-                            : item.narration || "(No narration)"}
+                            : item.audio_state === "pending" ? "Record your narration" :
+                              item.audio_state === "recorded" ? "Your voice saved" :
+                              item.narration || "(No narration)"}
                         </span>
                       </button>
                     )}
