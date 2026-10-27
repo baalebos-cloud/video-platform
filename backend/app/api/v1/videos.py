@@ -296,6 +296,17 @@ async def rerender_video(
             "Some scenes have no saved images or narration. Create a new video to enable re-rendering.",
         )
 
+    if (video.voice_preferences or {}).get("mode") == "recorded":
+        asset_ids = [scene.audio_asset_id for scene in scenes]
+        rows = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+        by_id = {asset.id: asset for asset in rows.scalars().all()}
+        if any(
+            (by_id.get(scene.audio_asset_id) is None
+             or (by_id[scene.audio_asset_id].provider_metadata or {}).get("provider") != "personal_recording")
+            for scene in scenes
+        ):
+            raise HTTPException(409, "Record narration for every scene before rendering")
+
     job = GenerationJob(video_id=video.id, type=JobType.RENDER, status=JobStatus.QUEUED)
     db.add(job)
     video.status = VideoStatus.RENDERING
