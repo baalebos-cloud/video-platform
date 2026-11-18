@@ -85,8 +85,39 @@ class Settings(BaseSettings):
     stock_footage_enabled: bool = False
     image_api_key: str | None = Field(default=None, repr=False)
 
-    video_provider: str = "mock"
+    # "mock" composes a still image + Ken Burns motion (zero cost, always
+    # available). "replicate" calls a real generative-video model — see
+    # app/ai/providers/video/replicate.py for what REPLICATE_VIDEO_MODEL
+    # must look like and why its input fields are configurable.
+    video_provider: Literal["mock", "replicate"] = "mock"
     video_api_key: str | None = Field(default=None, repr=False)
+    replicate_api_token: str | None = Field(default=None, repr=False)
+    # "owner/model" as it appears in the model's Replicate URL, e.g.
+    # "kwaivgi/kling-v1.6-standard" or "google/veo-3-fast". Pick a model
+    # that supports image-conditioning if scene-to-scene visual continuity
+    # matters (see docs/video-generation-upgrade.md).
+    replicate_video_model: str = "kwaivgi/kling-v1.6-standard"
+    replicate_video_prompt_field: str = "prompt"
+    # Set to "" to disable passing the generated scene image as a
+    # conditioning frame (e.g. for a pure text-to-video model).
+    replicate_video_image_field: str = "image"
+    # Extra static inputs the chosen model requires/accepts, as JSON, e.g.
+    # '{"duration": 5, "aspect_ratio": "9:16"}'. Merged into every request.
+    replicate_video_extra_input_raw: str = "{}"
+    replicate_video_poll_timeout_seconds: int = Field(default=240, ge=30, le=900)
+
+    @property
+    def replicate_video_extra_input(self) -> dict:
+        import json
+
+        raw = self.replicate_video_extra_input_raw.strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
     # Private licensed inference is optional and OFF unless configured.
     # Never enable for a research-only model in a commercial product.
@@ -170,6 +201,11 @@ class Settings(BaseSettings):
                 raise ValueError("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required")
         if self.stock_footage_enabled and not self.pixabay_api_key:
             raise ValueError("PIXABAY_API_KEY is required when STOCK_FOOTAGE_ENABLED=true")
+        if self.video_provider == "replicate":
+            if not self.replicate_api_token:
+                raise ValueError("REPLICATE_API_TOKEN is required when VIDEO_PROVIDER=replicate")
+            if "/" not in self.replicate_video_model:
+                raise ValueError("REPLICATE_VIDEO_MODEL must be 'owner/model' as shown on replicate.com")
         if self.pixabay_video_api_url != "https://pixabay.com/api/videos/":
             raise ValueError("PIXABAY_VIDEO_API_URL must use the official Pixabay video API")
         try:

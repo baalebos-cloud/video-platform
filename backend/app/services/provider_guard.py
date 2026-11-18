@@ -28,7 +28,7 @@ class MediaGuardError(MediaProviderError):
 
 async def claim_media_call(kind: str) -> None:
     settings = get_settings()
-    if kind not in {"voice", "image", "voice_preview"}:
+    if kind not in {"voice", "image", "voice_preview", "video"}:
         raise ValueError("Unknown media operation")
 
     now = datetime.now(timezone.utc)

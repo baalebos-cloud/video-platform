@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.ai.director.director import PlanValidationError, validate_long_form_plan, validate_video_plan
-from app.ai.prompts.video_director_v4 import PROMPT_VERSION, build_user_prompt
+from app.ai.prompts.video_director_v5 import PROMPT_VERSION, build_user_prompt
 from app.ai.schemas.video_plan import VideoPlan
 from app.api.v1.videos import GenerateVideoRequest
 from app.config.settings import Settings
@@ -43,7 +43,7 @@ def test_long_form_director_prompt_explicitly_requests_real_narration():
         duration=180, category="educational", voice_preferences={},
         visual_style="cinematic_realistic", brand_context={}, creativity="high", cta=None,
     )
-    assert PROMPT_VERSION == "video-director-v4"
+    assert PROMPT_VERSION == "video-director-v5"
     assert "requested_duration_seconds=180" in prompt
     assert "narration_word_target=375" in prompt
     assert "recommended_scene_count=12" in prompt
@@ -119,7 +119,7 @@ async def test_long_form_retries_underlength_plan_once_before_media():
     with patch("app.ai.director.director.select_provider", return_value=provider):
         plan, meta = await create_plan(topic="Practical AI", duration=180)
     assert provider.calls == 2
-    assert meta["prompt_version"] == "video-director-v4"
+    assert meta["prompt_version"] == "video-director-v5"
     assert len(plan.scenes) == 12
 
 
@@ -185,4 +185,4 @@ async def test_natural_speaking_rate_needs_only_one_gemini_request():
         output, metadata = await create_plan(topic="Engineering documentary", duration=180)
     assert provider.calls == 1
     assert len(output.scenes) == 16
-    assert metadata["prompt_version"] == "video-director-v4"
+    assert metadata["prompt_version"] == "video-director-v5"

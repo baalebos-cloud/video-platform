@@ -114,4 +114,4 @@ async def test_invalid_quota_counter_response_fails_closed():
 @pytest.mark.asyncio
 async def test_unknown_media_operation_is_rejected():
     with pytest.raises(ValueError, match="Unknown media"):
-        await provider_guard.claim_media_call("video")
+        await provider_guard.claim_media_call("avatar_lipsync")
