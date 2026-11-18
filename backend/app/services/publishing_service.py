@@ -8,7 +8,6 @@ work) — a worker process shouldn't need gigabytes of RAM just to publish
 a video it already rendered.
 """
 import asyncio
-import math
 from collections.abc import AsyncIterator
 
 import httpx
@@ -49,6 +48,37 @@ async def _iter_chunks(storage_key: str, total_size: int) -> AsyncIterator[tuple
     start = 0
     while start < total_size:
         end = min(start + CHUNK_SIZE, total_size) - 1
+        chunk = await asyncio.to_thread(storage_service.get_object_range_bytes, storage_key, start, end)
+        if not chunk:
+            raise ValueError("Storage returned an empty chunk while streaming the publish upload")
+        yield start, end, chunk
+        start = end + 1
+
+
+def _tiktok_chunk_plan(total_size: int) -> tuple[int, int]:
+    """TikTok's own chunking contract (media-transfer guide) is NOT "equal
+    fixed-size chunks with a smaller trailing one" — it's:
+      - total_chunk_count = floor(total_size / chunk_size), never ceil
+      - any remainder bytes are folded into the LAST chunk (which may be
+        larger than chunk_size, up to TikTok's 128MB final-chunk ceiling),
+        never sent as a separate undersized extra chunk
+      - a file no bigger than one chunk is uploaded whole as chunk 1 of 1
+    Returns (chunk_size, total_chunk_count) for _iter_tiktok_chunks below.
+    """
+    if total_size <= CHUNK_SIZE:
+        return total_size, 1
+    return CHUNK_SIZE, max(1, total_size // CHUNK_SIZE)
+
+
+async def _iter_tiktok_chunks(
+    storage_key: str, total_size: int, chunk_size: int, total_chunk_count: int
+) -> AsyncIterator[tuple[int, int, bytes]]:
+    """Like _iter_chunks, but merges any trailing remainder into the final
+    chunk instead of yielding it as its own short chunk — see _tiktok_chunk_plan."""
+    start = 0
+    for index in range(total_chunk_count):
+        is_last = index == total_chunk_count - 1
+        end = (total_size - 1) if is_last else (start + chunk_size - 1)
         chunk = await asyncio.to_thread(storage_service.get_object_range_bytes, storage_key, start, end)
         if not chunk:
             raise ValueError("Storage returned an empty chunk while streaming the publish upload")
@@ -109,7 +139,7 @@ class TikTokInboxPublishingProvider:
     async def publish(self, asset_ref: str, metadata: dict, *, access_token: str | None = None) -> dict:
         if not access_token: raise ValueError("Missing TikTok OAuth authorization")
         total_size = await _object_size(asset_ref)
-        total_chunk_count = max(1, math.ceil(total_size / CHUNK_SIZE))
+        chunk_size, total_chunk_count = _tiktok_chunk_plan(total_size)
         # Inbox upload requires user to open TikTok and explicitly complete
         # the final post there; do not falsely report as published.
         async with httpx.AsyncClient(timeout=120, follow_redirects=False) as client:
@@ -117,7 +147,7 @@ class TikTokInboxPublishingProvider:
                 "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
                 headers={"Authorization":f"Bearer {access_token}"},
                 json={"source_info":{"source":"FILE_UPLOAD","video_size":total_size,
-                                     "chunk_size":min(CHUNK_SIZE, total_size),
+                                     "chunk_size":chunk_size,
                                      "total_chunk_count":total_chunk_count}})
             init.raise_for_status()
             body = init.json()
@@ -130,7 +160,7 @@ class TikTokInboxPublishingProvider:
                 raise ValueError("TikTok did not supply a valid upload target")
 
             last_response = None
-            async for start, end, chunk in _iter_chunks(asset_ref, total_size):
+            async for start, end, chunk in _iter_tiktok_chunks(asset_ref, total_size, chunk_size, total_chunk_count):
                 last_response = await client.put(
                     upload_url, content=chunk,
                     headers={

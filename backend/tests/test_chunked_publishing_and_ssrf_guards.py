@@ -71,9 +71,60 @@ async def test_youtube_upload_streams_in_8mb_chunks_not_whole_file(monkeypatch):
         assert e1 + 1 == s2
 
 
+def test_tiktok_chunk_plan_floors_the_count_and_merges_the_remainder():
+    """TikTok's media-transfer guide requires floor division (never ceil)
+    and folds any trailing remainder into the FINAL chunk rather than
+    sending it as its own short extra chunk."""
+    chunk = publishing_service.CHUNK_SIZE
+
+    # Slightly over one chunk -> still exactly 1 chunk (remainder merged in),
+    # not 2 (which naive ceil division would give).
+    assert publishing_service._tiktok_chunk_plan(chunk + 500) == (chunk, 1)
+    # Exactly 2 chunks' worth, no remainder to merge.
+    assert publishing_service._tiktok_chunk_plan(chunk * 2) == (chunk, 2)
+    # 2 full chunks plus a remainder -> still 2 chunks; the second absorbs it.
+    assert publishing_service._tiktok_chunk_plan(chunk * 2 + 500) == (chunk, 2)
+    # Smaller than one chunk -> uploaded whole as a single chunk.
+    assert publishing_service._tiktok_chunk_plan(500) == (500, 1)
+
+
 @pytest.mark.asyncio
-async def test_tiktok_upload_sends_correct_chunk_count(monkeypatch):
-    total_size = publishing_service.CHUNK_SIZE + 500  # 2 chunks
+async def test_tiktok_upload_merges_trailing_bytes_into_the_final_chunk(monkeypatch):
+    # Slightly over one 8MiB chunk: per TikTok's contract this is ONE
+    # chunk (the "extra" 500 bytes are folded into it), not two.
+    total_size = publishing_service.CHUNK_SIZE + 500
+    fake_storage(monkeypatch, total_size)
+    puts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "init" in str(request.url):
+            body = json.loads(request.content)
+            assert body["source_info"]["total_chunk_count"] == 1
+            assert body["source_info"]["chunk_size"] == publishing_service.CHUNK_SIZE
+            return httpx.Response(200, json={
+                "data": {"upload_url": "https://open-upload.tiktokapis.com/upload",
+                          "publish_id": "pub-1"},
+            })
+        puts.append(request)
+        return httpx.Response(201)
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.AsyncClient
+    with patch("httpx.AsyncClient", lambda **kw: original_client(transport=transport, **kw)):
+        result = await publishing_service.TikTokInboxPublishingProvider().publish(
+            "video/final.mp4", {"title": "Test"}, access_token="tok",
+        )
+    assert result["external_post_id"] == "pub-1"
+    assert len(puts) == 1
+    assert len(puts[0].content) == total_size
+    assert puts[0].headers["Content-Range"] == f"bytes 0-{total_size - 1}/{total_size}"
+
+
+@pytest.mark.asyncio
+async def test_tiktok_upload_sends_one_put_per_full_chunk_with_no_undersized_extra(monkeypatch):
+    # 2 full chunks plus a small remainder: still exactly 2 PUTs, with the
+    # second absorbing the remainder rather than a 3rd short PUT.
+    total_size = publishing_service.CHUNK_SIZE * 2 + 500
     fake_storage(monkeypatch, total_size)
     puts = []
 
@@ -96,6 +147,8 @@ async def test_tiktok_upload_sends_correct_chunk_count(monkeypatch):
         )
     assert result["external_post_id"] == "pub-1"
     assert len(puts) == 2
+    assert len(puts[0].content) == publishing_service.CHUNK_SIZE
+    assert len(puts[1].content) == publishing_service.CHUNK_SIZE + 500
 
 
 def test_llm_gateway_url_is_safe_rejects_internal_and_non_https():
