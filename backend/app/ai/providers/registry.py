@@ -20,6 +20,7 @@ from app.ai.providers.tts.cloudflare import CloudflareVoiceProvider
 from app.ai.providers.tts.mock import MockVoiceProvider
 from app.ai.providers.tts.openai import OpenAIVoiceProvider
 from app.ai.providers.video.mock import MockVideoProvider
+from app.ai.providers.video.replicate import ReplicateVideoProvider
 from app.config.settings import get_settings
 
 TaskType = Literal["llm", "voice", "image", "video"]
@@ -81,7 +82,18 @@ def _image_registry() -> dict[str, ImageProvider]:
 
 @lru_cache
 def _video_registry() -> dict[str, VideoProvider]:
-    return {"mock": MockVideoProvider()}
+    settings = get_settings()
+    providers: dict[str, VideoProvider] = {"mock": MockVideoProvider()}
+    if settings.video_provider == "replicate":
+        providers["replicate"] = ReplicateVideoProvider(
+            api_token=settings.replicate_api_token or "",
+            model=settings.replicate_video_model,
+            prompt_field=settings.replicate_video_prompt_field,
+            image_field=settings.replicate_video_image_field,
+            extra_input=settings.replicate_video_extra_input,
+            poll_timeout_seconds=settings.replicate_video_poll_timeout_seconds,
+        )
+    return providers
 
 
 def select_provider(task: TaskType, **_capability_hints) -> LLMProvider | VoiceProvider | ImageProvider | VideoProvider:

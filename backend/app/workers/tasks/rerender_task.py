@@ -33,7 +33,8 @@ def make_asset_manifest(scenes: list[Scene], assets: dict[uuid.UUID, Asset], own
             or scene.duration_seconds <= 0
         ):
             raise ValueError("A storyboard scene is missing a valid saved image or narration")
-        stock_key = (getattr(scene, "metadata_json", None) or {}).get("stock_footage_key")
+        metadata = getattr(scene, "metadata_json", None) or {}
+        stock_key = metadata.get("stock_footage_key") or metadata.get("ai_video_key")
         manifest[str(scene.id)] = {
             "image_key": image.storage_key,
             "audio_key": audio.storage_key,

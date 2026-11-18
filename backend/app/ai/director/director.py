@@ -8,7 +8,7 @@ import json
 
 from pydantic import ValidationError
 
-from app.ai.prompts.video_director_v4 import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
+from app.ai.prompts.video_director_v5 import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
 from app.ai.providers.registry import select_provider
 from app.ai.schemas.video_plan import VideoPlan
 from app.config.logging import get_logger

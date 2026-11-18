@@ -249,9 +249,13 @@ async def generation_pipeline(ctx, payload: dict) -> None:
                 image_key = visual["image_key"]
                 stock_key = visual.get("video_key")
                 if stock_key:
+                    # "stock_footage_key" for real Pixabay footage,
+                    # "ai_video_key" for a generated motion clip — rerender_task
+                    # reads both back so a re-render keeps whichever one exists.
+                    key_name = visual.get("video_key_source", "stock_footage_key")
                     scene.metadata_json = {**(scene.metadata_json or {}),
-                        "stock_footage_key": stock_key,
-                        "stock_source_url": visual.get("source_url")}
+                        key_name: stock_key,
+                        **({"stock_source_url": visual.get("source_url")} if visual.get("source_url") else {})}
 
                 audio_asset = Asset(
                     owner_id=project.user_id,
