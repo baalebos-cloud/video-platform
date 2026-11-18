@@ -13,6 +13,30 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _is_public_https_url(url: str | None) -> bool:
+    """Reject a URL that could redirect a server-side request at internal
+    infrastructure (SSRF): only a plausibly-public https:// hostname passes.
+    Shared by every setting that feeds an operator-configured outbound URL
+    into an httpx call made from inside the backend/worker.
+    """
+    if not url:
+        return False
+    from ipaddress import ip_address
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname or parsed.username or parsed.password or parsed.fragment:
+        return False
+    if hostname in {"localhost", "metadata.google.internal"} or hostname.endswith((".internal", ".local")):
+        return False
+    try:
+        literal = ip_address(hostname)
+    except ValueError:
+        return True  # DNS hostname approved by operator; disable redirects in client.
+    return literal.is_global
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -127,21 +151,17 @@ class Settings(BaseSettings):
 
     @property
     def voice_clone_enabled(self) -> bool:
-        from urllib.parse import urlsplit
         if not (self.voice_clone_license_approved and self.voice_clone_endpoint and self.voice_clone_token):
             return False
-        from ipaddress import ip_address
-        parsed = urlsplit(self.voice_clone_endpoint)
-        hostname = (parsed.hostname or "").lower()
-        if parsed.scheme != "https" or not hostname or parsed.username or parsed.password or parsed.fragment:
-            return False
-        if hostname in {"localhost", "metadata.google.internal"} or hostname.endswith((".internal", ".local")):
-            return False
-        try:
-            literal = ip_address(hostname)
-        except ValueError:
-            return True  # DNS hostname approved by operator; disable redirects in client.
-        return literal.is_global
+        return _is_public_https_url(self.voice_clone_endpoint)
+
+    @property
+    def llm_gateway_url_is_safe(self) -> bool:
+        """llm_gateway_url is operator-configured but still an outbound URL
+        the backend/worker POSTs user-derived prompt text to on every
+        generation — apply the same SSRF guard as voice_clone_endpoint
+        rather than trusting it just because it came from settings."""
+        return _is_public_https_url(self.llm_gateway_url)
 
     # --- Publishing ---
     youtube_client_id: str | None = None
