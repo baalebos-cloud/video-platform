@@ -1,12 +1,28 @@
-"""Real opt-in YouTube upload / TikTok inbox upload; mock remains local-only."""
+"""Real opt-in YouTube upload / TikTok inbox upload; mock remains local-only.
+
+Uploads stream from object storage in fixed-size ranged chunks rather than
+loading the whole file into process memory first. That matters more now
+that the render pipeline can produce a CMAF master well past the old
+60MB in-memory cap (see docs/video-generation-upgrade.md / the ABR ladder
+work) — a worker process shouldn't need gigabytes of RAM just to publish
+a video it already rendered.
+"""
 import asyncio
+from collections.abc import AsyncIterator
+
 import httpx
+
 from app.config.settings import get_settings
 from app.config.logging import get_logger
-from app.services.storage_service import get_publishable_object_bytes
+from app.services import storage_service
 
 logger = get_logger("services.publishing")
-MAX_PUBLISH_BYTES = 60 * 1024 * 1024
+
+# A sane ceiling against a corrupted/runaway render, not a memory limit —
+# chunked streaming means publish cost no longer scales with this number.
+MAX_PUBLISH_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB, per the platform APIs' own chunking guidance
+
 
 class MockPublishingProvider:
     name = "mock"
@@ -18,18 +34,63 @@ class MockPublishingProvider:
     async def fetch_analytics(self, external_post_id: str) -> dict:
         return {"views":0,"likes":0,"shares":0,"comments":0}
 
-async def _load_media(storage_key: str) -> bytes:
+
+async def _object_size(storage_key: str) -> int:
     # Publishing workers read from trusted storage, never arbitrary user URLs.
-    data = await asyncio.to_thread(get_publishable_object_bytes, storage_key, MAX_PUBLISH_BYTES)
-    if not data or len(data) > MAX_PUBLISH_BYTES:
-        raise ValueError("MP4 is empty or exceeds current 60 MB publish limit")
-    return data
+    size = await asyncio.to_thread(storage_service.get_object_size, storage_key)
+    if size <= 0 or size > MAX_PUBLISH_BYTES:
+        raise ValueError("Video file is empty or exceeds the current publish size limit")
+    return size
+
+
+async def _iter_chunks(storage_key: str, total_size: int) -> AsyncIterator[tuple[int, int, bytes]]:
+    """Yields (range_start, range_end_inclusive, chunk_bytes) covering the whole object."""
+    start = 0
+    while start < total_size:
+        end = min(start + CHUNK_SIZE, total_size) - 1
+        chunk = await asyncio.to_thread(storage_service.get_object_range_bytes, storage_key, start, end)
+        if not chunk:
+            raise ValueError("Storage returned an empty chunk while streaming the publish upload")
+        yield start, end, chunk
+        start = end + 1
+
+
+def _tiktok_chunk_plan(total_size: int) -> tuple[int, int]:
+    """TikTok's own chunking contract (media-transfer guide) is NOT "equal
+    fixed-size chunks with a smaller trailing one" — it's:
+      - total_chunk_count = floor(total_size / chunk_size), never ceil
+      - any remainder bytes are folded into the LAST chunk (which may be
+        larger than chunk_size, up to TikTok's 128MB final-chunk ceiling),
+        never sent as a separate undersized extra chunk
+      - a file no bigger than one chunk is uploaded whole as chunk 1 of 1
+    Returns (chunk_size, total_chunk_count) for _iter_tiktok_chunks below.
+    """
+    if total_size <= CHUNK_SIZE:
+        return total_size, 1
+    return CHUNK_SIZE, max(1, total_size // CHUNK_SIZE)
+
+
+async def _iter_tiktok_chunks(
+    storage_key: str, total_size: int, chunk_size: int, total_chunk_count: int
+) -> AsyncIterator[tuple[int, int, bytes]]:
+    """Like _iter_chunks, but merges any trailing remainder into the final
+    chunk instead of yielding it as its own short chunk — see _tiktok_chunk_plan."""
+    start = 0
+    for index in range(total_chunk_count):
+        is_last = index == total_chunk_count - 1
+        end = (total_size - 1) if is_last else (start + chunk_size - 1)
+        chunk = await asyncio.to_thread(storage_service.get_object_range_bytes, storage_key, start, end)
+        if not chunk:
+            raise ValueError("Storage returned an empty chunk while streaming the publish upload")
+        yield start, end, chunk
+        start = end + 1
+
 
 class YouTubePublishingProvider:
     name = "youtube"
     async def publish(self, asset_ref: str, metadata: dict, *, access_token: str | None = None) -> dict:
         if not access_token: raise ValueError("Missing YouTube OAuth authorization")
-        data = await _load_media(asset_ref)
+        total_size = await _object_size(asset_ref)
         # Default to PRIVATE; never make a user's new video public without
         # review and an explicit opt-in in a future creator-facing UI.
         payload = {"snippet":{"title":metadata["title"][:100],
@@ -40,33 +101,54 @@ class YouTubePublishingProvider:
                 "https://www.googleapis.com/upload/youtube/v3/videos",
                 params={"uploadType":"resumable","part":"snippet,status"},
                 headers={"Authorization":f"Bearer {access_token}","X-Upload-Content-Type":"video/mp4",
-                         "X-Upload-Content-Length":str(len(data))}, json=payload)
+                         "X-Upload-Content-Length":str(total_size)}, json=payload)
             init.raise_for_status()
             url = init.headers.get("location","")
             if not url.startswith("https://www.googleapis.com/"):
                 raise ValueError("YouTube did not supply a valid upload location")
-            uploaded = await client.put(url, content=data,
-                headers={"Authorization":f"Bearer {access_token}","Content-Type":"video/mp4",
-                         "Content-Length":str(len(data))})
-            uploaded.raise_for_status()
-            video_id = uploaded.json().get("id")
-            if not video_id: raise ValueError("YouTube upload did not return video ID")
+
+            video_id = None
+            async for start, end, chunk in _iter_chunks(asset_ref, total_size):
+                response = await client.put(
+                    url, content=chunk,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "video/mp4",
+                        "Content-Length": str(len(chunk)),
+                        "Content-Range": f"bytes {start}-{end}/{total_size}",
+                    },
+                )
+                if response.status_code == 308:
+                    # Resumable-upload "keep going"; the Range header it
+                    # returns should match what we just sent — the GCS/
+                    # YouTube resumable protocol doesn't require resending
+                    # on a clean sequential upload, so just continue.
+                    continue
+                if response.status_code in (200, 201):
+                    video_id = response.json().get("id")
+                    break
+                response.raise_for_status()
+
+            if not video_id:
+                raise ValueError("YouTube upload did not return video ID")
             return {"external_post_id":video_id,"status":"published"}
+
 
 class TikTokInboxPublishingProvider:
     name = "tiktok"
     async def publish(self, asset_ref: str, metadata: dict, *, access_token: str | None = None) -> dict:
         if not access_token: raise ValueError("Missing TikTok OAuth authorization")
-        data = await _load_media(asset_ref)
+        total_size = await _object_size(asset_ref)
+        chunk_size, total_chunk_count = _tiktok_chunk_plan(total_size)
         # Inbox upload requires user to open TikTok and explicitly complete
         # the final post there; do not falsely report as published.
-        size = len(data)
         async with httpx.AsyncClient(timeout=120, follow_redirects=False) as client:
             init = await client.post(
                 "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
                 headers={"Authorization":f"Bearer {access_token}"},
-                json={"source_info":{"source":"FILE_UPLOAD","video_size":size,
-                                     "chunk_size":size,"total_chunk_count":1}})
+                json={"source_info":{"source":"FILE_UPLOAD","video_size":total_size,
+                                     "chunk_size":chunk_size,
+                                     "total_chunk_count":total_chunk_count}})
             init.raise_for_status()
             body = init.json()
             if body.get("error",{}).get("code") not in ("ok",None):
@@ -76,12 +158,28 @@ class TikTokInboxPublishingProvider:
             publish_id = info.get("publish_id")
             if not upload_url.startswith("https://open-upload.tiktokapis.com/") or not publish_id:
                 raise ValueError("TikTok did not supply a valid upload target")
-            uploaded = await client.put(upload_url, content=data,
-                headers={"Content-Type":"video/mp4",
-                         "Content-Length":str(size),
-                         "Content-Range":f"bytes 0-{size-1}/{size}"})
-            uploaded.raise_for_status()
+
+            last_response = None
+            async for start, end, chunk in _iter_tiktok_chunks(asset_ref, total_size, chunk_size, total_chunk_count):
+                last_response = await client.put(
+                    upload_url, content=chunk,
+                    headers={
+                        "Content-Type": "video/mp4",
+                        "Content-Length": str(len(chunk)),
+                        "Content-Range": f"bytes {start}-{end}/{total_size}",
+                    },
+                )
+                # Per TikTok's chunked-upload contract, every chunk but the
+                # last returns a non-2xx "partial content received" status;
+                # only the final chunk's response is a real success/failure.
+                if end + 1 < total_size:
+                    continue
+                last_response.raise_for_status()
+
+            if last_response is None:
+                raise ValueError("TikTok upload sent no data")
             return {"external_post_id":publish_id,"status":"awaiting_creator_action"}
+
 
 def get_publishing_provider(platform: str):
     s = get_settings()

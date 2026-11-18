@@ -8,6 +8,7 @@ poll GET /api/v1/videos/{id} for live progress, and every stage is wrapped
 so a failure marks the job FAILED with a stable error_code rather than
 crashing the worker silently.
 """
+import asyncio
 import re
 import uuid
 
@@ -38,6 +39,28 @@ STAGE_WEIGHTS = {
     "rendering": 15,
     "finalizing": 5,
 }
+
+# Scene voice/visual generation is the pipeline's dominant cost (STAGE_WEIGHTS
+# gives it 50% of total progress) and was previously fully sequential. The
+# provider calls themselves (voice_task.run / visual_task.run) touch no DB
+# session, so up to this many scenes can run concurrently; 6 caps fan-out
+# against the same free-tier provider rate limits provider_guard enforces.
+SCENE_CONCURRENCY = 6
+
+
+async def _gather_cancel_on_error(coros: list) -> list:
+    """Like asyncio.gather, but cancels the remaining in-flight scene tasks
+    as soon as one fails, instead of letting them keep burning provider
+    calls for a job we already know will be marked FAILED."""
+    tasks = [asyncio.ensure_future(c) for c in coros]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 async def _mark_stage(db, video: Video, job: GenerationJob, stage: str, progress: int) -> None:
@@ -222,30 +245,47 @@ async def generation_pipeline(ctx, payload: dict) -> None:
             )
             scene_assets: dict[str, dict] = {}
             provider_settings = get_settings()
-            for scene in scenes:
-                logger.info(
-                    "pipeline.scene_voice_started",
-                    video_id=str(video_id), scene_sequence=scene.sequence,
-                    provider=(video.voice_preferences or {}).get("mode", provider_settings.voice_provider),
-                )
-                audio_key, voice_seconds = await voice_task.run(video, scene, **({"profile_reference_key": reference_key} if reference_key else {}))
-                duration = max(voice_seconds, runtime_floor.get(str(scene.id), 0.0))
-                logger.info(
-                    "pipeline.scene_voice_ready",
-                    video_id=str(video_id), scene_sequence=scene.sequence,
-                    measured_voice_seconds=round(voice_seconds, 2),
-                    planned_clip_seconds=round(duration, 2),
-                )
-                logger.info(
-                    "pipeline.scene_visual_started",
-                    video_id=str(video_id), scene_sequence=scene.sequence,
-                )
-                visual = await visual_task.run(video, scene)
-                logger.info(
-                    "pipeline.scene_visual_ready",
-                    video_id=str(video_id), scene_sequence=scene.sequence,
-                    provider=visual["provider"],
-                )
+            semaphore = asyncio.Semaphore(SCENE_CONCURRENCY)
+
+            async def _generate_scene_media(scene: Scene) -> tuple:
+                """Voice + visual generation for one scene. Reads only already
+                -loaded columns off `video`/`scene` and never touches `db` —
+                safe to run concurrently with other scenes' generation."""
+                async with semaphore:
+                    logger.info(
+                        "pipeline.scene_voice_started",
+                        video_id=str(video_id), scene_sequence=scene.sequence,
+                        provider=(video.voice_preferences or {}).get("mode", provider_settings.voice_provider),
+                    )
+                    audio_key, voice_seconds = await voice_task.run(video, scene, **({"profile_reference_key": reference_key} if reference_key else {}))
+                    duration = max(voice_seconds, runtime_floor.get(str(scene.id), 0.0))
+                    logger.info(
+                        "pipeline.scene_voice_ready",
+                        video_id=str(video_id), scene_sequence=scene.sequence,
+                        measured_voice_seconds=round(voice_seconds, 2),
+                        planned_clip_seconds=round(duration, 2),
+                    )
+                    logger.info(
+                        "pipeline.scene_visual_started",
+                        video_id=str(video_id), scene_sequence=scene.sequence,
+                    )
+                    visual = await visual_task.run(video, scene)
+                    logger.info(
+                        "pipeline.scene_visual_ready",
+                        video_id=str(video_id), scene_sequence=scene.sequence,
+                        provider=visual["provider"],
+                    )
+                    return scene, audio_key, duration, visual
+
+            # Fan the provider calls out across scenes (bounded by
+            # SCENE_CONCURRENCY); the DB writes below stay strictly
+            # sequential afterward since an AsyncSession is not safe for
+            # concurrent use from multiple coroutines.
+            scene_results = await _gather_cancel_on_error(
+                [_generate_scene_media(scene) for scene in scenes]
+            )
+
+            for scene, audio_key, duration, visual in scene_results:
                 image_key = visual["image_key"]
                 stock_key = visual.get("video_key")
                 if stock_key:

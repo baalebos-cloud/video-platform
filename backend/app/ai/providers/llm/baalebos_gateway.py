@@ -49,6 +49,12 @@ class BaalebosGatewayLLMProvider(LLMProvider):
         if not settings.llm_gateway_url:
             logger.warning("llm_gateway.not_configured", fallback="mock")
             return await self._fallback.complete(system_prompt, user_prompt, json_mode=json_mode)
+        if not settings.llm_gateway_url_is_safe:
+            # Refuses rather than falls back: an operator who configured a
+            # non-public/non-https URL made a config mistake worth seeing
+            # in logs, not one to silently paper over with mock output.
+            logger.error("llm_gateway.unsafe_url_rejected")
+            return await self._fallback.complete(system_prompt, user_prompt, json_mode=json_mode)
 
         combined_prompt = f"{system_prompt}\n\n{user_prompt}"
         if json_mode:

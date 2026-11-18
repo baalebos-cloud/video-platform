@@ -86,3 +86,23 @@ def delete_object(storage_key: str) -> None:
 def get_object_bytes(storage_key: str) -> bytes:
     obj = _client().get_object(Bucket=settings.storage_bucket, Key=storage_key)
     return obj["Body"].read()
+
+
+def get_object_size(storage_key: str) -> int:
+    details = _client().head_object(Bucket=settings.storage_bucket, Key=storage_key)
+    return int(details["ContentLength"])
+
+
+def get_object_range_bytes(storage_key: str, start: int, end_inclusive: int) -> bytes:
+    """Fetch one byte range of an object (inclusive end, HTTP Range semantics).
+
+    Used to stream a large final video out to a publishing provider in
+    fixed-size chunks (see publishing_service.py) instead of ever holding
+    the whole file in process memory — a 1080p+ CMAF master can be well
+    past the old 60MB in-memory publish cap.
+    """
+    obj = _client().get_object(
+        Bucket=settings.storage_bucket, Key=storage_key,
+        Range=f"bytes={start}-{end_inclusive}",
+    )
+    return obj["Body"].read()
