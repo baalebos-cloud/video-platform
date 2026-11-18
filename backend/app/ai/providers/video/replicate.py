@@ -20,6 +20,7 @@ whichever model they choose without editing this file — check the model's
 """
 import asyncio
 import base64
+import time
 from collections.abc import Callable
 
 import httpx
@@ -129,14 +130,22 @@ class ReplicateVideoProvider(VideoProvider):
     async def _poll_until_done(self, client: httpx.AsyncClient, prediction: dict) -> str:
         get_url = (prediction.get("urls") or {}).get("get")
         status = prediction.get("status")
-        elapsed = 0.0
+        # Wall-clock deadline, not a sleep-only counter: a slow-but-successful
+        # status request (up to the client's own 60s timeout) must count
+        # against the budget too, or REPLICATE_VIDEO_POLL_TIMEOUT_SECONDS
+        # stops bounding real latency and a hung provider can ride the
+        # worker's much larger job timeout instead of degrading gracefully.
+        deadline = time.monotonic() + self.poll_timeout_seconds
         while status not in {"succeeded", "failed", "canceled"}:
-            if elapsed >= self.poll_timeout_seconds or not get_url:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not get_url:
                 raise MediaProviderError("Replicate video generation timed out")
-            await asyncio.sleep(self.poll_interval_seconds)
-            elapsed += self.poll_interval_seconds
+            await asyncio.sleep(min(self.poll_interval_seconds, remaining))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise MediaProviderError("Replicate video generation timed out")
             try:
-                poll = await client.get(get_url, headers=self._headers())
+                poll = await client.get(get_url, headers=self._headers(), timeout=max(1.0, remaining))
             except httpx.RequestError:
                 raise MediaProviderError("Replicate video status check failed (network or timeout)") from None
             if not 200 <= poll.status_code < 300:

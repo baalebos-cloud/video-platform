@@ -308,7 +308,7 @@ async def update_scene_prompt(
     scene.visual_prompt = prompt
     # A changed prompt must not silently re-use the old stock footage.
     scene.metadata_json = {k: v for k, v in (scene.metadata_json or {}).items()
-                           if k not in ("stock_footage_key", "stock_source_url")}
+                           if k not in ("stock_footage_key", "stock_source_url", "ai_video_key")}
     await db.commit()
     return {"scene_id": str(scene.id), "visual_prompt": scene.visual_prompt}
 
@@ -377,7 +377,7 @@ async def regenerate_scene(
     await db.flush()
     scene.visual_asset_id = asset.id
     scene.metadata_json = {k: v for k, v in (scene.metadata_json or {}).items()
-                           if k not in ("stock_footage_key", "stock_source_url")}
+                           if k not in ("stock_footage_key", "stock_source_url", "ai_video_key")}
     video.needs_rerender = True
     await db.commit()
     return {"scene_id": str(scene.id), "visual_asset_id": str(asset.id)}
